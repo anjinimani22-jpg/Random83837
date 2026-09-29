@@ -45633,14 +45633,16 @@ const formatDate = (timestamp) => {
 };
 const AUTH_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functions/v1/rapid-processor";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpicWhydWZ5dmhhdmJwbHpyZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMDQ2NjUsImV4cCI6MjEwMjc4MDY2NX0.tUiHKrfasU4vdLTXHeqLBMpfs3dWs8Hhkwe84oRaH94";
-const callAuthFunction = async (body) => {
+const callAuthFunction = async (body, sessionToken) => {
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    apikey: SUPABASE_ANON_KEY
+  };
+  if (sessionToken) headers["x-session-token"] = sessionToken;
   const response = await fetch(AUTH_FUNCTION_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      apikey: SUPABASE_ANON_KEY
-    },
+    headers,
     body: JSON.stringify(body)
   });
   const data = await response.json().catch(() => ({}));
@@ -45662,8 +45664,11 @@ const registerUserLocal = async (username, password) => {
 const loginUserRemote = async (username, password) => {
   return callAuthFunction({ action: "login", username, password });
 };
-const findUserLocal = async (email, password) => {
-  return null;
+const fetchCurrentUserRemote = async (sessionToken) => {
+  return callAuthFunction({ action: "me" }, sessionToken);
+};
+const deleteAccountRemote = async (sessionToken, password) => {
+  return callAuthFunction({ action: "delete", password }, sessionToken);
 };
 const loadSession = () => {
   try {
@@ -45865,19 +45870,26 @@ const Backroomspedia = () => {
   reactExports.useEffect(() => {
     const restoreSession = async () => {
       const session = loadSession();
-      if (session?.username) {
-        setIsLoggedIn(true);
-        setUsername(session.username);
+      if (!session?.token) {
+        if (session) saveSession(null);
         return;
       }
-      if (session) {
-        const user = await findUserLocal(session.email, session.password);
-        if (user) {
+      try {
+        const { status, data } = await fetchCurrentUserRemote(session.token);
+        if (status === 200 && data.username) {
           setIsLoggedIn(true);
-          setUserEmail(user.email);
-          setUsername(user.username);
-          setProfileBio(user.bio || "");
-          setProfileAvatar(user.avatar);
+          setUsername(data.username);
+          saveSession({ username: data.username, token: session.token });
+        } else if (status === 401) {
+          saveSession(null);
+        } else if (session.username) {
+          setIsLoggedIn(true);
+          setUsername(session.username);
+        }
+      } catch (e2) {
+        if (session.username) {
+          setIsLoggedIn(true);
+          setUsername(session.username);
         }
       }
     };
@@ -46069,12 +46081,12 @@ const Backroomspedia = () => {
     setShowProfilePage(false);
     setViewingProfile(null);
   };
-  const handleLoginSuccess = async (email, uname) => {
+  const handleLoginSuccess = async (email, uname, token) => {
     setIsLoggedIn(true);
     setUserEmail(email);
     setUsername(uname);
     setShowLoginPage(false);
-    saveSession({ username: uname });
+    saveSession({ username: uname, token });
     fetchUsersLocal().then(setApiUsers);
   };
   const handleLogout = () => {
@@ -47279,8 +47291,25 @@ const Backroomspedia = () => {
           color: "black",
           borderBottom: "1px solid #ddd"
         }, children: "Profile" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: async () => {
           if (!isLoggedIn) return;
+          const password = window.prompt("Enter your password to permanently delete your account:");
+          if (password === null) return;
+          const sessionToken = loadSession()?.token;
+          if (!sessionToken) {
+            alert("Your session has expired. Please log in again.");
+            return;
+          }
+          try {
+            const { status, data } = await deleteAccountRemote(sessionToken, password);
+            if (status !== 200) {
+              alert(status === 401 ? "Wrong password, or your session has expired." : data.error || "Failed to delete account. Please try again.");
+              return;
+            }
+          } catch (e2) {
+            alert("Could not reach the server. Please try again.");
+            return;
+          }
           saveSession(null);
           setPageDiscussions((prev) => {
             const updated = {};
@@ -50076,6 +50105,7 @@ const LoginPage = ({
   const [errors, setErrors] = reactExports.useState({});
   const [submitted, setSubmitted] = reactExports.useState(false);
   const [successText, setSuccessText] = reactExports.useState("Account created successfully!");
+  const [sessionToken, setSessionToken] = reactExports.useState(null);
   const [busy, setBusy] = reactExports.useState(false);
   const handleSubmit = async (e2) => {
     e2.preventDefault();
@@ -50098,6 +50128,7 @@ const LoginPage = ({
         const { status, data } = await loginUserRemote(trimmedUsername, password);
         if (status === 200) {
           setUsername(data.username || trimmedUsername);
+          setSessionToken(data.token || null);
           setSuccessText("Logged in successfully!");
           setSubmitted(true);
         } else if (status === 401) {
@@ -50116,6 +50147,7 @@ const LoginPage = ({
       const { status, data } = await registerUserLocal(trimmedUsername, password);
       if (status === 201) {
         setUsername(data.username || trimmedUsername);
+        setSessionToken(data.token || null);
         setSuccessText("Account created successfully!");
         setSubmitted(true);
       } else if (status === 409) {
@@ -50179,7 +50211,7 @@ const LoginPage = ({
         color: "black",
         marginBottom: "20px"
       }, children: successText }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onLoginSuccess(email, username), style: {
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onLoginSuccess(email, username, sessionToken), style: {
         background: "#F3EFE5",
         border: "2px solid #BDBDBD",
         padding: "10px 20px",
