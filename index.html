@@ -50166,7 +50166,10 @@ const LEGAL_SECTIONS = [
   {
     title: "Contact",
     items: [
-      "Questions about these terms or your data can be sent to backroomspedia@protonmail.com"
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        "Questions about these terms or your data can be sent to ",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "mailto:backroomspedia@protonmail.com", style: { color: "black" }, children: "backroomspedia@protonmail.com" })
+      ] })
     ]
   }
 ];
@@ -50234,7 +50237,7 @@ const LegalPage = ({ onClose }) => {
         fontSize: "14px",
         lineHeight: 1.6,
         color: "#333"
-      }, children: section.items.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { style: { marginBottom: "6px" }, children: item }, item)) })
+      }, children: section.items.map((item, i2) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { style: { marginBottom: "6px" }, children: item }, i2)) })
     ] }, section.title))
   ] }) });
 };
