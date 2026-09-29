@@ -45637,6 +45637,10 @@ const DISCUSSION_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functi
 const callAuthFunction = async (body, sessionToken) => {
   return callSupabaseFunction(AUTH_FUNCTION_URL, body, sessionToken);
 };
+const MODERATION_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functions/v1/backroomspedia-moderation";
+const callModerationFunction = async (body, sessionToken) => {
+  return callSupabaseFunction(MODERATION_FUNCTION_URL, body, sessionToken);
+};
 const callDiscussionFunction = async (body, sessionToken) => {
   return callSupabaseFunction(DISCUSSION_FUNCTION_URL, body, sessionToken);
 };
@@ -45859,6 +45863,7 @@ const Backroomspedia = () => {
   const [profileAvatar, setProfileAvatar] = reactExports.useState(null);
   const [searchView, setSearchView] = reactExports.useState("pages");
   const [apiUsers, setApiUsers] = reactExports.useState([]);
+  const [isModerator, setIsModerator] = reactExports.useState(false);
   const [friendRequests, setFriendRequests] = reactExports.useState(() => {
     try {
       const saved = localStorage.getItem("backroomspedia_friend_requests");
@@ -45923,6 +45928,22 @@ const Backroomspedia = () => {
     };
     restoreSession();
   }, []);
+  reactExports.useEffect(() => {
+    const sessionToken = loadSession()?.token;
+    if (!isLoggedIn || !sessionToken) {
+      setIsModerator(false);
+      return;
+    }
+    let cancelled = false;
+    callModerationFunction({ action: "status" }, sessionToken).then(({ status, data }) => {
+      if (!cancelled) setIsModerator(status === 200 && data.moderator === true);
+    }).catch(() => {
+      if (!cancelled) setIsModerator(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, username]);
   const [pageRatings, setPageRatings] = reactExports.useState({});
   const [userVotes, setUserVotes] = reactExports.useState({});
   const [pageComments, setPageComments] = reactExports.useState({});
@@ -46444,7 +46465,7 @@ const Backroomspedia = () => {
   reactExports.useEffect(() => {
     if (showDiscussionPage) loadDiscussions(currentPage || "Discussion");
   }, [showDiscussionPage, currentPage, loadDiscussions]);
-  const discussionRequest = async (body) => {
+  const discussionRequest = async (body, callFunction = callDiscussionFunction) => {
     const sessionToken = loadSession()?.token;
     if (!sessionToken) {
       alert("Please log in first.");
@@ -46452,7 +46473,7 @@ const Backroomspedia = () => {
     }
     setDiscussionBusy(true);
     try {
-      const { status, data } = await callDiscussionFunction(body, sessionToken);
+      const { status, data } = await callFunction(body, sessionToken);
       if (status === 200 || status === 201) return data;
       alert(data.error || "Something went wrong. Please try again.");
       return null;
@@ -46499,6 +46520,43 @@ const Backroomspedia = () => {
     }));
     setDiscussionReplyText("");
     setReplyingDiscussionTo(null);
+  };
+  const removeDiscussionFromState = (pageName, discussionId) => {
+    const deleteDiscussionFromTree = (discs) => {
+      return discs.reduce((acc, d2) => {
+        if (d2.id === discussionId) return acc;
+        return [...acc, {
+          ...d2,
+          replies: deleteDiscussionFromTree(d2.replies)
+        }];
+      }, []);
+    };
+    setPageDiscussions((prev) => ({
+      ...prev,
+      [pageName]: deleteDiscussionFromTree(prev[pageName] || [])
+    }));
+  };
+  const reportDiscussion = async (discussion) => {
+    if (discussionBusy) return;
+    const reason = window.prompt("Why are you reporting this post?");
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert("Please give a reason.");
+      return;
+    }
+    const data = await discussionRequest({ action: "report", discussionId: discussion.id, reason: reason.trim() }, callModerationFunction);
+    if (data?.reported) alert("Thanks. A moderator will review this post.");
+  };
+  const moderatorRemoveDiscussion = async (discussion, pageName) => {
+    if (discussionBusy) return;
+    const reason = window.prompt(`Remove this post by ${discussion.user}? Its replies will be removed too.\n\nReason:`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert("Please give a reason.");
+      return;
+    }
+    const data = await discussionRequest({ action: "remove", id: discussion.id, reason: reason.trim() }, callModerationFunction);
+    if (data?.removed) removeDiscussionFromState(pageName, discussion.id);
   };
   const renderDiscussion = (discussion, pageName, depth = 0) => {
     const isReply = depth > 0;
@@ -46619,19 +46677,7 @@ const Backroomspedia = () => {
             if (discussionBusy) return;
             const data = await discussionRequest({ action: "delete", id: discussion.id });
             if (!data?.deleted) return;
-            const deleteDiscussionFromTree = (discs) => {
-              return discs.reduce((acc, d2) => {
-                if (d2.id === discussion.id) return acc;
-                return [...acc, {
-                  ...d2,
-                  replies: deleteDiscussionFromTree(d2.replies)
-                }];
-              }, []);
-            };
-            setPageDiscussions((prev) => ({
-              ...prev,
-              [pageName]: deleteDiscussionFromTree(prev[pageName] || [])
-            }));
+            removeDiscussionFromState(pageName, discussion.id);
           }, style: {
             padding: "4px 10px",
             fontSize: "11px",
@@ -46640,7 +46686,25 @@ const Backroomspedia = () => {
             cursor: "pointer",
             fontFamily: "'Courier New', Courier, monospace",
             color: "#e74c3c"
-          }, children: "Delete" })
+          }, children: "Delete" }),
+          discussion.user !== username && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => reportDiscussion(discussion), style: {
+            padding: "4px 10px",
+            fontSize: "11px",
+            background: "transparent",
+            border: "1px solid #ccc",
+            cursor: "pointer",
+            fontFamily: "'Courier New', Courier, monospace",
+            color: "#666"
+          }, children: "Report" }),
+          isModerator && discussion.user !== username && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => moderatorRemoveDiscussion(discussion, pageName), style: {
+            padding: "4px 10px",
+            fontSize: "11px",
+            background: "transparent",
+            border: "1px solid #e74c3c",
+            cursor: "pointer",
+            fontFamily: "'Courier New', Courier, monospace",
+            color: "#e74c3c"
+          }, children: "Remove" })
         ] })
       ] }),
       replyingDiscussionTo === discussion.id && isLoggedIn && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
@@ -47131,6 +47195,11 @@ const Backroomspedia = () => {
     ] }, comment.id);
   };
   const [showLegalPage, setShowLegalPage] = reactExports.useState(false);
+  const [showModerationPage, setShowModerationPage] = reactExports.useState(false);
+  const openModerationPage = () => {
+    setIsSidebarOpen(false);
+    setShowModerationPage(true);
+  };
   const [cookieNoticeDismissed, setCookieNoticeDismissed] = reactExports.useState(() => getCookie(COOKIE_NOTICE_COOKIE) === "1");
   const dismissCookieNotice = () => {
     setCookie(COOKIE_NOTICE_COOKIE, "1", 365 * 24 * 60 * 60);
@@ -47140,7 +47209,7 @@ const Backroomspedia = () => {
     setIsSidebarOpen(false);
     setShowLegalPage(true);
   };
-  const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showLegalPage ? "legal" : showDiscussionPage ? "discussion" : null;
+  const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showLegalPage ? "legal" : showModerationPage ? "moderation" : showDiscussionPage ? "discussion" : null;
   const urlPanel = isSidebarOpen && sidebarView === "settings" ? "settings" : null;
   const urlSyncReadyRef = reactExports.useRef(false);
   const [urlNotFound, setUrlNotFound] = reactExports.useState(false);
@@ -47149,11 +47218,12 @@ const Backroomspedia = () => {
       const params = new URLSearchParams(window.location.search);
       const page = params.get("page");
       const panel = params.get("panel");
-      setUrlNotFound(page !== null && !["discussion", "login", "profile", "legal"].includes(page) || panel !== null && panel !== "settings");
+      setUrlNotFound(page !== null && !["discussion", "login", "profile", "legal", "moderation"].includes(page) || panel !== null && panel !== "settings");
       setShowDiscussionPage(page === "discussion");
       setShowLoginPage(page === "login");
       setShowProfilePage(page === "profile");
       setShowLegalPage(page === "legal");
+      setShowModerationPage(page === "moderation");
       if (panel === "settings") {
         setSidebarView("settings");
         setIsSidebarOpen(true);
@@ -47173,7 +47243,7 @@ const Backroomspedia = () => {
     }
     const url = new URL(window.location.href);
     const currentUrlPage = url.searchParams.get("page");
-    const knownUrlPage = ["discussion", "login", "profile", "legal"].includes(currentUrlPage) ? currentUrlPage : null;
+    const knownUrlPage = ["discussion", "login", "profile", "legal", "moderation"].includes(currentUrlPage) ? currentUrlPage : null;
     const knownUrlPanel = url.searchParams.get("panel") === "settings" ? "settings" : null;
     if (knownUrlPage === urlPage && knownUrlPanel === urlPanel) return;
     if (urlPage) url.searchParams.set("page", urlPage);
@@ -47345,6 +47415,13 @@ const Backroomspedia = () => {
           color: "black",
           borderBottom: "1px solid #ddd"
         }, children: "Profile" }),
+        isModerator && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openModerationPage, style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "black",
+          borderBottom: "1px solid #ddd"
+        }, children: "Moderation" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: async () => {
           if (!isLoggedIn) return;
           const password = window.prompt("Enter your password to permanently delete your account:");
@@ -47580,6 +47657,7 @@ const Backroomspedia = () => {
     aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(AIChatPanel, { onClose: closeAI, pages, currentLanguage, archiveMetadata, archiveData }),
     showLoginPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LoginPage, { onClose: closeLogin, onLoginSuccess: handleLoginSuccess }),
     showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose: () => setShowLegalPage(false) }),
+    showModerationPage && /* @__PURE__ */ jsxRuntimeExports.jsx(ModerationPage, { onClose: () => setShowModerationPage(false) }),
     !cookieNoticeDismissed && !showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(CookieNotice, { onAccept: dismissCookieNotice, onLearnMore: openLegalPage }),
     showCommentHistory && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
       position: "fixed",
@@ -50154,13 +50232,207 @@ ${response}`;
       ` })
   ] });
 };
+const MOD_BUTTON_STYLE = {
+  padding: "4px 10px",
+  fontSize: "12px",
+  background: "transparent",
+  border: "1px solid #ccc",
+  cursor: "pointer",
+  fontFamily: "'Courier New', Courier, monospace",
+  color: "#333"
+};
+const MOD_DANGER_BUTTON_STYLE = { ...MOD_BUTTON_STYLE, border: "1px solid #e74c3c", color: "#e74c3c" };
+const MOD_INPUT_STYLE = {
+  padding: "8px",
+  fontSize: "14px",
+  border: "1px solid #ccc",
+  fontFamily: "Arial, Helvetica, sans-serif",
+  boxSizing: "border-box"
+};
+const formatModTime = (value) => value ? new Date(value).toLocaleString() : "";
+const ModerationPage = ({ onClose }) => {
+  const [tab, setTab] = reactExports.useState("reports");
+  const [items, setItems] = reactExports.useState([]);
+  const [loading, setLoading] = reactExports.useState(false);
+  const [busy, setBusy] = reactExports.useState(false);
+  const [error, setError] = reactExports.useState("");
+  const [banUsername, setBanUsername] = reactExports.useState("");
+  const [banDays, setBanDays] = reactExports.useState("");
+  const [banReason, setBanReason] = reactExports.useState("");
+  const [banDeletePosts, setBanDeletePosts] = reactExports.useState(false);
+  const request = async (body) => {
+    const sessionToken = loadSession()?.token;
+    if (!sessionToken) throw new Error("Please log in first.");
+    const { status, data } = await callModerationFunction(body, sessionToken);
+    if (status !== 200 && status !== 201) throw new Error(data.error || "Something went wrong. Please try again.");
+    return data;
+  };
+  const load = reactExports.useCallback(async (which) => {
+    setLoading(true);
+    setError("");
+    try {
+      const action = which === "reports" ? "queue" : which;
+      const data = await request({ action });
+      setItems(which === "reports" ? data.reports : which === "bans" ? data.bans : data.log);
+    } catch (e2) {
+      setItems([]);
+      setError(e2.message || "Could not reach the server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  reactExports.useEffect(() => {
+    load(tab);
+  }, [tab, load]);
+  const run = async (body, confirmText) => {
+    if (busy) return;
+    if (confirmText && !window.confirm(confirmText)) return;
+    setBusy(true);
+    try {
+      await request(body);
+      await load(tab);
+      return true;
+    } catch (e2) {
+      alert(e2.message || "Could not reach the server. Please try again.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const askReason = (question) => {
+    const reason = window.prompt(question);
+    if (reason === null) return null;
+    if (!reason.trim()) {
+      alert("Please give a reason.");
+      return null;
+    }
+    return reason.trim();
+  };
+  const removePost = (entry) => {
+    const reason = askReason(`Remove this post by ${entry.post.user}? Its replies will be removed too.\n\nReason:`);
+    if (reason) run({ action: "remove", id: entry.post.id, reason });
+  };
+  const banAuthor = (entry) => {
+    const days = window.prompt(`Ban ${entry.post.user} from posting for how many days? Leave empty for a permanent ban.`, "7");
+    if (days === null) return;
+    const reason = askReason(`Reason for banning ${entry.post.user}:`);
+    if (!reason) return;
+    run({ action: "ban", username: entry.post.user, days: days.trim() === "" ? null : Number(days), reason, deletePosts: window.confirm(`Also delete all posts by ${entry.post.user}?`) });
+  };
+  const submitBan = async (e2) => {
+    e2.preventDefault();
+    if (!banUsername.trim() || !banReason.trim()) {
+      alert("Please enter a username and a reason.");
+      return;
+    }
+    const ok = await run({ action: "ban", username: banUsername.trim(), days: banDays.trim() === "" ? null : Number(banDays), reason: banReason.trim(), deletePosts: banDeletePosts });
+    if (ok) {
+      setBanUsername("");
+      setBanDays("");
+      setBanReason("");
+      setBanDeletePosts(false);
+    }
+  };
+  const tabButton = (id, label) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setTab(id), style: {
+    ...MOD_BUTTON_STYLE,
+    fontSize: "13px",
+    padding: "6px 14px",
+    background: tab === id ? "#F3EFE5" : "transparent",
+    fontWeight: tab === id ? "bold" : "normal"
+  }, children: label }, id);
+  const cardStyle = { border: "1px solid #eee", background: "#fafafa", padding: "12px", marginBottom: "10px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px", color: "#333", overflowWrap: "anywhere" };
+  const metaStyle = { fontSize: "12px", color: "#666", marginBottom: "6px" };
+  const renderReports = () => items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No open reports." }) : items.map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `${entry.reports} report${entry.reports === 1 ? "" : "s"} · ${entry.post.isReply ? "Reply" : "Post"} by ${entry.post.user} on "${entry.post.pageName}" · ${formatModTime(entry.post.timestamp)}` }),
+    entry.post.name && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold", marginBottom: "4px" }, children: entry.post.name }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { whiteSpace: "pre-wrap", marginBottom: "8px" }, children: entry.post.text }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `Reasons: ${entry.reasons.join(" · ")}` }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => removePost(entry), style: MOD_DANGER_BUTTON_STYLE, children: "Remove post" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => run({ action: "dismiss", discussionId: entry.post.id }, "Dismiss the reports on this post and keep it?"), style: MOD_BUTTON_STYLE, children: "Dismiss reports" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => banAuthor(entry), style: MOD_DANGER_BUTTON_STYLE, children: "Ban author" })
+    ] })
+  ] }, entry.post.id));
+  const renderBans = () => /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: submitBan, style: { ...cardStyle, display: "flex", flexDirection: "column", gap: "8px" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold" }, children: "Ban a user" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: banUsername, onChange: (e2) => setBanUsername(e2.target.value), placeholder: "Username", style: MOD_INPUT_STYLE }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: banDays, onChange: (e2) => setBanDays(e2.target.value.replace(/[^0-9]/g, "")), placeholder: "Days (empty = permanent)", inputMode: "numeric", style: MOD_INPUT_STYLE }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: banReason, onChange: (e2) => setBanReason(e2.target.value), placeholder: "Reason", maxLength: 500, style: MOD_INPUT_STYLE }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { fontSize: "13px", display: "flex", gap: "6px", alignItems: "center" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: banDeletePosts, onChange: (e2) => setBanDeletePosts(e2.target.checked) }),
+        "Also delete all of their posts"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", disabled: busy, style: { ...MOD_DANGER_BUTTON_STYLE, alignSelf: "flex-start", padding: "6px 14px" }, children: "Ban" })
+    ] }),
+    items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No active bans." }) : items.map((b2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold", marginBottom: "4px" }, children: b2.username }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `${b2.until ? `Until ${formatModTime(b2.until)}` : "Permanent"} · by ${b2.bannedBy || "unknown"} on ${formatModTime(b2.createdAt)}` }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginBottom: "8px" }, children: `Reason: ${b2.reason}` }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => run({ action: "unban", username: b2.username }, `Unban ${b2.username}?`), style: MOD_BUTTON_STYLE, children: "Unban" })
+    ] }, b2.username))
+  ] });
+  const renderLog = () => items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No moderation actions yet." }) : items.map((l2, i2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: formatModTime(l2.timestamp) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: `${l2.moderator} ${l2.action === "remove" ? "removed a post by" : l2.action === "dismiss" ? "dismissed reports on a post by" : l2.action === "ban" ? "banned" : "unbanned"} ${l2.targetUser || "a deleted user"}${l2.targetPage ? ` on "${l2.targetPage}"` : ""}` }),
+    l2.reason && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { ...metaStyle, marginTop: "4px", marginBottom: 0 }, children: `Reason: ${l2.reason}` })
+  ] }, i2));
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+    position: "fixed",
+    inset: 0,
+    background: "#FFF1CF",
+    zIndex: 4e3,
+    overflowY: "auto",
+    padding: "20px",
+    boxSizing: "border-box"
+  }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+    background: "white",
+    border: "2px solid #BDBDBD",
+    padding: "40px 30px",
+    width: "100%",
+    maxWidth: "800px",
+    margin: "0 auto",
+    boxSizing: "border-box"
+  }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "16px"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
+        margin: 0,
+        fontSize: "20px",
+        fontWeight: "normal",
+        color: "black",
+        fontFamily: "'EB Garamond', serif"
+      }, children: "Moderation" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, style: {
+        background: "none",
+        border: "1px solid #BDBDBD",
+        fontSize: "14px",
+        cursor: "pointer",
+        color: "black",
+        padding: "4px 10px",
+        fontFamily: "monospace"
+      }, children: "✕ Close" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }, children: [
+      tabButton("reports", "Reports"),
+      tabButton("bans", "Bans"),
+      tabButton("log", "Log"),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: loading, onClick: () => load(tab), style: { ...MOD_BUTTON_STYLE, marginLeft: "auto" }, children: "Refresh" })
+    ] }),
+    error ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#e74c3c", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: error }) : loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#666", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: "Loading..." }) : tab === "reports" ? renderReports() : tab === "bans" ? renderBans() : renderLog()
+  ] }) });
+};
 const LEGAL_SECTIONS = [
   {
     title: "Terms of Use",
     items: [
       "Backroomspedia is a free, fan-made encyclopedia about the Backrooms. By using the site you agree to these terms.",
       "Discussion posts are public and shown with your username. You are responsible for what you post.",
-      "Do not post content that is illegal, hateful, harassing, sexually explicit or that infringes someone else's rights. Content that breaks these rules may be removed and the account that posted it may be deleted.",
+      "Do not post content that is illegal, hateful, harassing, sexually explicit or that infringes someone else's rights. Moderators may remove content that breaks these rules and may ban the account that posted it from posting, for a set time or permanently.",
       "Do not try to break, overload or get around the security of the site, including its login and rate limits.",
       "The site is provided as is, without any guarantee that it will always be available or error free.",
       "These terms may change. The date at the top of this page shows when they were last updated."
@@ -50171,7 +50443,8 @@ const LEGAL_SECTIONS = [
     items: [
       "Account: when you register we store your username and a hashed version of your password (PBKDF2-SHA-256 with a random salt). Your actual password is never stored. We do not ask for your email address or real name.",
       "Discussions: when you post in a discussion we store the page, title, text and time of the post and which account posted it. Posts are shown with your username to everyone. They are kept until you delete them, the post they reply to is deleted, or your account is deleted.",
-      "Security: your IP address and account are used to limit how often login, registration, account and posting requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. These records are normally deleted about one day after they are created, and failed attempts are cleared as soon as you log in successfully.",
+      "Reports and moderation: when you report a post we store which post you reported, your account and your reason. Moderators see the post and the reasons but not who reported it. Reports are kept until the post or your account is deleted. If your account is banned we store the reason, who banned it and when the ban ends. Moderators' actions (removing posts, dismissing reports, bans) are logged with the moderator's username, the affected username and page, and the reason, and the log is kept for 180 days.",
+      "Security: your IP address and account are used to limit how often login, registration, account, posting and reporting requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. These records are normally deleted about one day after they are created, and failed attempts are cleared as soon as you log in successfully.",
       "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers. Comments and ratings on articles are not currently saved to our servers.",
       "Service providers: the site is hosted on GitHub Pages, accounts are stored with Supabase, and fonts are loaded from Google Fonts. These providers receive your IP address and basic browser information when your browser contacts them, and may keep their own logs under their own policies.",
       "We do not sell your data and we do not use advertising or analytics trackers.",
