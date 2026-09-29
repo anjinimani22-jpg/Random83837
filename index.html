@@ -46125,21 +46125,54 @@ const Backroomspedia = () => {
   reactExports.useEffect(() => {
     let cancelled = false;
     fetchPagesLocal().then((fetched) => {
-      if (!cancelled) setPages(fetched);
+      if (!cancelled) setPages((prev) => ({ ...fetched, ...prev }));
     });
     return () => {
       cancelled = true;
     };
   }, []);
-  const handleKeyDown = (e2) => {
+  const [articleEditTarget, setArticleEditTarget] = reactExports.useState(null);
+  const refreshArticleList = reactExports.useCallback(async () => {
+    const fetched = await fetchPagesLocal();
+    setPages((prev) => {
+      const next = {};
+      for (const title of Object.keys(fetched)) next[title] = prev[title] ?? null;
+      return next;
+    });
+  }, []);
+  const articleLoadingRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    if (!currentPage || typeof pages[currentPage] === "string" || articleLoadingRef.current === currentPage) return;
+    const requested = currentPage;
+    articleLoadingRef.current = requested;
+    callArticlesFunction({ action: "page", title: requested }).then(({ status, data }) => {
+      if (status === 200 && typeof data.html === "string") {
+        setPages((prev) => ({ ...prev, [data.title]: data.html }));
+        setCurrentPage((current) => current === requested && data.title !== requested ? data.title : current);
+      } else if (status === 404) {
+        // Drop the article from the address first so the 404 message isn't cleared by the address sync.
+        const url = new URL(window.location.href);
+        if ((url.searchParams.get("article") || "").toLowerCase() === requested.toLowerCase()) {
+          url.searchParams.delete("article");
+          window.history.replaceState(null, "", url);
+        }
+        setCurrentPage((current) => current === requested ? null : current);
+        setUrlNotFound(true);
+      } else {
+        console.error("Failed to load article:", data.error || status);
+      }
+    }).catch((e2) => console.error("Failed to load article:", e2)).finally(() => {
+      if (articleLoadingRef.current === requested) articleLoadingRef.current = null;
+    });
+  }, [currentPage, pages]);
+  const handleKeyDown = async (e2) => {
     if (e2.key === "Enter") {
       const text2 = searchValue.toLowerCase().trim();
-      fetchPagesLocal(searchValue.trim()).then((fetched) => {
-        if (Object.keys(fetched).length > 0) {
-          setPages((prev) => ({ ...prev, ...fetched }));
-        }
-      });
-      const matchingPages = text2 === "" ? [] : Object.keys(pages).filter((name) => name.toLowerCase().includes(text2));
+      const fetched = text2 === "" ? {} : await fetchPagesLocal(searchValue.trim());
+      if (Object.keys(fetched).length > 0) {
+        setPages((prev) => ({ ...fetched, ...prev }));
+      }
+      const matchingPages = text2 === "" ? [] : [...new Set([...Object.keys(fetched), ...Object.keys(pages).filter((name) => name.toLowerCase().includes(text2))])];
       setResults(matchingPages);
       setLastResults(matchingPages);
       setResultPage(1);
@@ -46193,11 +46226,19 @@ const Backroomspedia = () => {
   const activateAI = () => {
     setAiOverlayOpen(true);
   };
-  const handleFeelingLucky = () => {
+  const handleFeelingLucky = async () => {
     const pageNames = Object.keys(pages);
     if (pageNames.length > 0) {
       const randomName = pageNames[Math.floor(Math.random() * pageNames.length)];
       openPage(randomName);
+      return;
+    }
+    try {
+      const { status, data } = await callArticlesFunction({ action: "random" });
+      if (status === 200 && data.title) openPage(data.title);
+      else alert(data.error || "There are no articles yet.");
+    } catch (e2) {
+      alert("Could not reach the server. Please try again.");
     }
   };
   const closeAI = () => {
@@ -47260,6 +47301,7 @@ const Backroomspedia = () => {
   };
   const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showLegalPage ? "legal" : showModerationPage ? "moderation" : showDiscussionPage ? "discussion" : null;
   const urlPanel = isSidebarOpen && sidebarView === "settings" ? "settings" : null;
+  const urlArticle = currentPage || null;
   const urlSyncReadyRef = reactExports.useRef(false);
   const [urlNotFound, setUrlNotFound] = reactExports.useState(false);
   reactExports.useEffect(() => {
@@ -47273,6 +47315,7 @@ const Backroomspedia = () => {
       setShowProfilePage(page === "profile");
       setShowLegalPage(page === "legal");
       setShowModerationPage(page === "moderation");
+      setCurrentPage(params.get("article") || null);
       if (panel === "settings") {
         setSidebarView("settings");
         setIsSidebarOpen(true);
@@ -47294,14 +47337,16 @@ const Backroomspedia = () => {
     const currentUrlPage = url.searchParams.get("page");
     const knownUrlPage = ["discussion", "login", "profile", "legal", "moderation"].includes(currentUrlPage) ? currentUrlPage : null;
     const knownUrlPanel = url.searchParams.get("panel") === "settings" ? "settings" : null;
-    if (knownUrlPage === urlPage && knownUrlPanel === urlPanel) return;
+    if (knownUrlPage === urlPage && knownUrlPanel === urlPanel && (url.searchParams.get("article") || null) === urlArticle) return;
     if (urlPage) url.searchParams.set("page", urlPage);
     else url.searchParams.delete("page");
     if (urlPanel) url.searchParams.set("panel", urlPanel);
     else url.searchParams.delete("panel");
+    if (urlArticle) url.searchParams.set("article", urlArticle);
+    else url.searchParams.delete("article");
     window.history.pushState(null, "", url);
     setUrlNotFound(false);
-  }, [urlPage, urlPanel]);
+  }, [urlPage, urlPanel, urlArticle]);
   reactExports.useEffect(() => {
     if (!currentPage || !urlNotFound) return;
     setUrlNotFound(false);
@@ -47855,8 +47900,17 @@ const Backroomspedia = () => {
         ] })
       ] }) }),
     showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose: () => setShowLegalPage(false) }),
-    showModerationPage && /* @__PURE__ */ jsxRuntimeExports.jsx(ModerationPage, { onClose: () => {
+    showModerationPage && /* @__PURE__ */ jsxRuntimeExports.jsx(ModerationPage, { initialArticle: articleEditTarget, onArticlesChanged: (savedTitle) => {
+      refreshArticleList();
+      if (savedTitle) setPages((prev) => ({ ...prev, [savedTitle]: null }));
+    }, onOpenArticle: (title) => {
       setShowModerationPage(false);
+      setArticleEditTarget(null);
+      setPages((prev) => ({ ...prev, [title]: null }));
+      openPage(title);
+    }, onClose: () => {
+      setShowModerationPage(false);
+      setArticleEditTarget(null);
       refreshModeratorStatus();
     } }),
     !cookieNoticeDismissed && !showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(CookieNotice, { onAccept: dismissCookieNotice, onLearnMore: openLegalPage }),
@@ -48462,7 +48516,7 @@ const Backroomspedia = () => {
             marginBottom: "20px",
             fontFamily: "'EB Garamond', serif"
           }, children: currentPage }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(PageBlocks, { content: pages[currentPage] || "" }) })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArticleFrame, { html: pages[currentPage] || "", title: currentPage, onOpenPage: openPage }) })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("style", { children: `
@@ -48756,7 +48810,23 @@ const Backroomspedia = () => {
         position: "relative",
         color: "black"
       }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(PageRenderer, { content: pages[currentPage], language: currentLanguage, pageName: currentPage }),
+        isModerator && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => {
+          setArticleEditTarget({ title: currentPage });
+          setShowModerationPage(true);
+        }, style: {
+          position: "absolute",
+          top: "25px",
+          right: "25px",
+          padding: "4px 12px",
+          fontSize: "12px",
+          background: "#F3EFE5",
+          border: "2px solid #BDBDBD",
+          cursor: "pointer",
+          fontFamily: "monospace",
+          color: "black",
+          zIndex: 2
+        }, children: "Edit" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(PageRenderer, { content: pages[currentPage], language: currentLanguage, pageName: currentPage, onOpenPage: openPage }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
           marginTop: "30px",
           paddingTop: "20px",
@@ -49541,8 +49611,95 @@ const parsePageBlocks = (html2) => {
   }
   return blocks;
 };
+const ARTICLES_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functions/v1/backroomspedia-articles";
+const callArticlesFunction = async (body, sessionToken) => {
+  return callSupabaseFunction(ARTICLES_FUNCTION_URL, body, sessionToken);
+};
+// Returns { title: null } for every matching article; the page itself is loaded when it is opened.
 const fetchPagesLocal = async (query) => {
-  return {};
+  try {
+    const q = typeof query === "string" ? query.trim() : "";
+    const { status, data } = await callArticlesFunction(q ? { action: "search", query: q } : { action: "list" });
+    if (status !== 200 || !Array.isArray(data.titles)) return {};
+    return Object.fromEntries(data.titles.map((t) => [t, null]));
+  } catch (e2) {
+    console.error("Failed to load articles:", e2);
+    return {};
+  }
+};
+// Shows an article in a sandboxed frame: its own scripts run, but they can't reach the site's
+// cookies, login or page, and can't navigate the site except through article links.
+const ARTICLE_FRAME_HELPER = `<script>(function () {
+  function send(msg) { try { parent.postMessage(Object.assign({ bp: true }, msg), "*"); } catch (e) {} }
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a.bp-page-link") : null;
+    if (!a) return;
+    e.preventDefault();
+    send({ type: "open-page", title: a.getAttribute("data-bp-page") });
+  }, true);
+  function live(el, on) {
+    var v = el.querySelector("video");
+    if (!v) return;
+    el.classList.toggle("bp-playing", on);
+    if (on) { v.currentTime = 0; var p = v.play(); if (p && p.catch) p.catch(function () {}); } else { v.pause(); }
+  }
+  document.querySelectorAll(".bp-live-photo").forEach(function (el) {
+    el.addEventListener("mouseenter", function () { live(el, true); });
+    el.addEventListener("mouseleave", function () { live(el, false); });
+    el.addEventListener("focus", function () { live(el, true); });
+    el.addEventListener("blur", function () { live(el, false); });
+    el.addEventListener("touchstart", function () { live(el, !el.classList.contains("bp-playing")); }, { passive: true });
+  });
+  var last = 0;
+  function height() {
+    var h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+    if (h !== last) { last = h; send({ type: "height", height: h }); }
+  }
+  window.addEventListener("load", height);
+  window.addEventListener("resize", height);
+  if (window.ResizeObserver) new ResizeObserver(height).observe(document.documentElement);
+  document.addEventListener("load", height, true);
+  setInterval(height, 1000);
+  height();
+})();<\/script>`;
+const ARTICLE_FRAME_STYLE = `<style>
+  html, body { margin: 0; padding: 0; background: transparent; color: #000; font-family: Arial, Helvetica, sans-serif; font-size: 17px; line-height: 1.6; overflow-wrap: anywhere; }
+  body { padding: 2px; }
+  img, video, svg { max-width: 100%; height: auto; }
+  audio { max-width: 100%; }
+  h1, h2, h3 { font-family: 'EB Garamond', Georgia, serif; }
+  a.bp-page-link { color: #0645ad; text-decoration: underline; cursor: pointer; }
+  .bp-live-photo { position: relative; display: inline-block; max-width: 100%; cursor: pointer; }
+  .bp-live-photo img { display: block; }
+  .bp-live-photo video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  .bp-live-photo.bp-playing video { opacity: 1; }
+  .bp-live-badge { position: absolute; top: 6px; left: 6px; font: bold 10px Arial, sans-serif; letter-spacing: 1px; background: rgba(255,255,255,0.85); color: #000; padding: 2px 5px; border-radius: 3px; }
+</style>`;
+const ArticleFrame = ({ html, title, onOpenPage }) => {
+  const frameRef = reactExports.useRef(null);
+  const [height, setHeight] = reactExports.useState(200);
+  reactExports.useEffect(() => {
+    const onMessage = (e2) => {
+      if (!frameRef.current || e2.source !== frameRef.current.contentWindow) return;
+      const msg = e2.data;
+      if (!msg || msg.bp !== true) return;
+      if (msg.type === "height" && Number.isFinite(msg.height)) setHeight(Math.min(Math.max(Math.ceil(msg.height) + 4, 60), 5e4));
+      if (msg.type === "open-page" && typeof msg.title === "string" && msg.title.length <= 200 && onOpenPage) onOpenPage(msg.title);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [onOpenPage]);
+  const srcDoc = reactExports.useMemo(() => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base target="_blank">'
+    + ARTICLE_FRAME_STYLE + "</head><body>" + (html || "") + ARTICLE_FRAME_HELPER + "</body></html>", [html]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("iframe", {
+    ref: frameRef,
+    title: title || "Article",
+    srcDoc,
+    sandbox: "allow-scripts allow-popups allow-popups-to-escape-sandbox",
+    allow: "autoplay; fullscreen",
+    referrerPolicy: "no-referrer",
+    style: { width: "100%", height: `${height}px`, border: "none", display: "block", background: "transparent" }
+  });
 };
 const PageBlocks = ({ content: content2 }) => {
   const blocks = parsePageBlocks(content2);
@@ -49573,7 +49730,8 @@ const PageBlocks = ({ content: content2 }) => {
 const PageRenderer = ({
   content: content2,
   language,
-  pageName
+  pageName,
+  onOpenPage
 }) => {
   const [translatedContent, setTranslatedContent] = reactExports.useState(content2);
   const [translatedTitle, setTranslatedTitle] = reactExports.useState(pageName);
@@ -49673,7 +49831,7 @@ const PageRenderer = ({
       color: "black",
       fontFamily: "'EB Garamond', serif"
     }, children: translatedTitle }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(PageBlocks, { content: translatedContent })
+    typeof content2 === "string" ? /* @__PURE__ */ jsxRuntimeExports.jsx(ArticleFrame, { html: translatedContent, title: translatedTitle, onOpenPage }) : /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#666", fontFamily: "Arial, Helvetica, sans-serif" }, children: "Loading..." })
   ] });
 };
 const stripHtml = (html2) => {
@@ -50283,8 +50441,135 @@ const MOD_INPUT_STYLE = {
   boxSizing: "border-box"
 };
 const formatModTime = (value) => value ? new Date(value).toLocaleString() : "";
-const ModerationPage = ({ onClose }) => {
-  const [tab, setTab] = reactExports.useState("reports");
+const ARTICLE_UPLOAD_LIMITS = { image: 8, video: 25, audio: 12 };
+const ARTICLE_HELP = "Write HTML (CSS and JavaScript allowed). Images, GIFs, videos, audio and live photos are stored with the article; links to them (https://...) are downloaded and stored when you save. <background image=\"...\" color=\"...\"> sets the page background. Names of other articles become links automatically.";
+const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
+  const [title, setTitle] = reactExports.useState(initial?.title || "");
+  const [source, setSource] = reactExports.useState("");
+  const [loading, setLoading] = reactExports.useState(!!initial?.title);
+  const [busy, setBusy] = reactExports.useState(false);
+  const [status, setStatus] = reactExports.useState("");
+  const originalTitle = initial?.title || null;
+  const textRef = reactExports.useRef(null);
+  const request = async (body) => {
+    const sessionToken = loadSession()?.token;
+    if (!sessionToken) throw new Error("Please log in first.");
+    const { status: code, data } = await callArticlesFunction(body, sessionToken);
+    if (code !== 200 && code !== 201) throw new Error(data.error || "Something went wrong. Please try again.");
+    return data;
+  };
+  reactExports.useEffect(() => {
+    if (!originalTitle) return;
+    request({ action: "source", title: originalTitle }).then((data) => {
+      setTitle(data.title);
+      setSource(data.source);
+    }).catch((e2) => setStatus(e2.message)).finally(() => setLoading(false));
+  }, [originalTitle]);
+  const insertAtCursor = (text2) => {
+    const el = textRef.current;
+    const start = el ? el.selectionStart : source.length;
+    const end = el ? el.selectionEnd : source.length;
+    setSource((prev) => prev.slice(0, start) + text2 + prev.slice(end));
+  };
+  const pickFile = (accept) => new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.onchange = (e2) => resolve(e2.target.files?.[0] || null);
+    input.click();
+  });
+  const uploadFile = async (file, kind) => {
+    if (file.size > ARTICLE_UPLOAD_LIMITS[kind] * 1024 * 1024) throw new Error(`That file is too big (limit ${ARTICLE_UPLOAD_LIMITS[kind]} MB).`);
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("That file couldn't be read."));
+      reader.readAsDataURL(file);
+    });
+    setStatus(`Uploading ${file.name}...`);
+    const data = await request({ action: "uploadMedia", data: dataUrl, kind });
+    return data.ref;
+  };
+  const insertMedia = async (kind) => {
+    if (busy) return;
+    const accept = kind === "image" ? "image/*" : kind === "video" ? "video/*" : kind === "audio" ? "audio/*" : "image/*";
+    const file = await pickFile(accept);
+    if (!file) return;
+    setBusy(true);
+    try {
+      const ref = await uploadFile(file, kind === "background" ? "image" : kind);
+      const alt = file.name.replace(/"/g, "");
+      insertAtCursor(kind === "image" ? `<img src="${ref}" alt="${alt}">` : kind === "video" ? `<video controls src="${ref}"></video>` : kind === "audio" ? `<audio controls src="${ref}"></audio>` : `<background image="${ref}"></background>`);
+      setStatus(`Added ${file.name}.`);
+    } catch (e2) {
+      setStatus(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const insertLivePhoto = async () => {
+    if (busy) return;
+    alert("Choose the still photo first, then the motion video (for an iPhone Live Photo: the photo, then its video).");
+    const photo = await pickFile("image/*");
+    if (!photo) return;
+    const video = await pickFile("video/*");
+    if (!video) return;
+    setBusy(true);
+    try {
+      const photoRef = await uploadFile(photo, "image");
+      const videoRef = await uploadFile(video, "video");
+      insertAtCursor(`<live-photo photo="${photoRef}" video="${videoRef}" alt="${photo.name.replace(/"/g, "")}"></live-photo>`);
+      setStatus("Added live photo.");
+    } catch (e2) {
+      setStatus(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    if (busy) return;
+    if (!title.trim()) {
+      alert("Please give the article a title.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Saving (downloading any linked media)...");
+    try {
+      const data = await request({ action: "save", title: title.trim(), source, originalTitle });
+      setSource(data.source);
+      setStatus(`Saved "${data.title}".`);
+      onSaved(data.title);
+      if (window.confirm(`Saved "${data.title}". Open it now?`)) onOpen(data.title);
+    } catch (e2) {
+      setStatus(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const buttonStyle = { ...MOD_BUTTON_STYLE, fontSize: "12px" };
+  if (loading) return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#666", fontFamily: "Arial, Helvetica, sans-serif" }, children: "Loading..." });
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "10px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold" }, children: originalTitle ? `Editing "${originalTitle}"` : "New article" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: title, onChange: (e2) => setTitle(e2.target.value), placeholder: "Title", maxLength: 200, style: MOD_INPUT_STYLE }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("image"), style: buttonStyle, children: "+ Image / GIF" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("video"), style: buttonStyle, children: "+ Video" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("audio"), style: buttonStyle, children: "+ Audio" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: insertLivePhoto, style: buttonStyle, children: "+ Live photo" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("background"), style: buttonStyle, children: "+ Background image" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { ref: textRef, value: source, onChange: (e2) => setSource(e2.target.value), spellCheck: false, placeholder: "<h2>Description</h2>\n<p>Level 0 is...</p>", style: { ...MOD_INPUT_STYLE, minHeight: "360px", fontFamily: "'Courier New', Courier, monospace", fontSize: "13px", whiteSpace: "pre", resize: "vertical" } }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "12px", color: "#666" }, children: ARTICLE_HELP }),
+    status && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "13px", color: "#333" }, children: status }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "8px" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: save, style: { ...MOD_BUTTON_STYLE, padding: "6px 16px", background: "#F3EFE5" }, children: busy ? "Please wait..." : "Save" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: onCancel, style: { ...MOD_BUTTON_STYLE, padding: "6px 16px" }, children: "Back to list" })
+    ] })
+  ] });
+};
+const ModerationPage = ({ onClose, initialArticle, onArticlesChanged, onOpenArticle }) => {
+  const [tab, setTab] = reactExports.useState(initialArticle ? "articles" : "reports");
+  const [editingArticle, setEditingArticle] = reactExports.useState(initialArticle || null);
   const [items, setItems] = reactExports.useState([]);
   const [loading, setLoading] = reactExports.useState(false);
   const [busy, setBusy] = reactExports.useState(false);
@@ -50304,6 +50589,12 @@ const ModerationPage = ({ onClose }) => {
     setLoading(true);
     setError("");
     try {
+      if (which === "articles") {
+        const { status: code, data: list } = await callArticlesFunction({ action: "list" });
+        if (code !== 200) throw new Error(list.error || "Couldn't load articles.");
+        setItems(list.titles);
+        return;
+      }
       const action = which === "reports" ? "queue" : which;
       const data = await request({ action });
       setItems(which === "reports" ? data.reports : which === "bans" ? data.bans : data.log);
@@ -50429,9 +50720,42 @@ const ModerationPage = ({ onClose }) => {
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => run({ action: "unban", username: b2.username }, `Unban ${b2.username}?`), style: MOD_BUTTON_STYLE, children: "Unban" })
     ] }, b2.username))
   ] });
+  const deleteArticle = async (title) => {
+    if (busy || !window.confirm(`Delete the article "${title}" and all of its media? This can't be undone.`)) return;
+    setBusy(true);
+    try {
+      const { status: code, data } = await callArticlesFunction({ action: "delete", title }, loadSession()?.token);
+      if (code !== 200) throw new Error(data.error || "Couldn't delete the article.");
+      onArticlesChanged && onArticlesChanged(null);
+      await load("articles");
+    } catch (e2) {
+      alert(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const renderArticles = () => editingArticle ? /* @__PURE__ */ jsxRuntimeExports.jsx(ArticleEditor, {
+    initial: editingArticle.title ? editingArticle : null,
+    onSaved: (savedTitle) => {
+      onArticlesChanged && onArticlesChanged(savedTitle);
+    },
+    onOpen: (openTitle) => onOpenArticle && onOpenArticle(openTitle),
+    onCancel: () => {
+      setEditingArticle(null);
+      load("articles");
+    }
+  }, editingArticle.title || "new") : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => setEditingArticle({ title: null }), style: { ...MOD_BUTTON_STYLE, padding: "6px 14px", marginBottom: "12px", background: "#F3EFE5" }, children: "+ New article" }),
+    items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No articles yet." }) : items.map((t2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { ...cardStyle, display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold", marginRight: "auto" }, children: t2 }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => onOpenArticle && onOpenArticle(t2), style: MOD_BUTTON_STYLE, children: "View" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => setEditingArticle({ title: t2 }), style: MOD_BUTTON_STYLE, children: "Edit" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => deleteArticle(t2), style: MOD_DANGER_BUTTON_STYLE, children: "Delete" })
+    ] }, t2))
+  ] });
   const renderLog = () => items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No moderation actions yet." }) : items.map((l2, i2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: formatModTime(l2.timestamp) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: `${l2.moderator} ${l2.action === "remove" ? "removed a post by" : l2.action === "dismiss" ? "dismissed reports on a post by" : l2.action === "ban" ? "banned" : l2.action === "clear_profile" ? "cleared the profile of" : "unbanned"} ${l2.targetUser || "a deleted user"}${l2.targetPage ? ` on "${l2.targetPage}"` : ""}` }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: `${l2.moderator} ${l2.action === "remove" ? "removed a post by" : l2.action === "dismiss" ? "dismissed reports on a post by" : l2.action === "ban" ? "banned" : l2.action === "clear_profile" ? "cleared the profile of" : l2.action === "article_create" ? "created the article" : l2.action === "article_edit" ? "edited the article" : l2.action === "article_delete" ? "deleted the article" : "unbanned"} ${l2.action.startsWith("article_") ? `"${l2.targetPage}"` : `${l2.targetUser || "a deleted user"}${l2.targetPage ? ` on "${l2.targetPage}"` : ""}`}` }),
     l2.reason && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { ...metaStyle, marginTop: "4px", marginBottom: 0 }, children: `Reason: ${l2.reason}` })
   ] }, i2));
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
@@ -50478,9 +50802,10 @@ const ModerationPage = ({ onClose }) => {
       tabButton("reports", "Reports"),
       tabButton("bans", "Bans"),
       tabButton("log", "Log"),
+      tabButton("articles", "Articles"),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: loading, onClick: () => load(tab), style: { ...MOD_BUTTON_STYLE, marginLeft: "auto" }, children: "Refresh" })
     ] }),
-    error ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#e74c3c", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: error }) : loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#666", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: "Loading..." }) : tab === "reports" ? renderReports() : tab === "bans" ? renderBans() : renderLog()
+    error ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#e74c3c", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: error }) : loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#666", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: "Loading..." }) : tab === "reports" ? renderReports() : tab === "bans" ? renderBans() : tab === "articles" ? renderArticles() : renderLog()
   ] }) });
 };
 const LEGAL_SECTIONS = [
@@ -50489,6 +50814,7 @@ const LEGAL_SECTIONS = [
     items: [
       "Backroomspedia is a free, fan-made encyclopedia about the Backrooms. By using the site you agree to these terms.",
       "Discussion posts, comments, images you attach, page ratings, your bio and your profile picture are public and shown with your username. You are responsible for what you post.",
+      "Articles are written by moderators. They can contain interactive content (JavaScript), which runs in an isolated frame that cannot see your account, cookies or login.",
       "Only upload images you have the right to share. Profile pictures and comment images must be PNG, JPEG, GIF or WebP files of 2 MB or less.",
       "Do not post content that is illegal, hateful, harassing, sexually explicit or that infringes someone else's rights. Moderators may remove content that breaks these rules and may ban the account that posted it from posting, for a set time or permanently.",
       "Do not try to break, overload or get around the security of the site, including its login and rate limits.",
@@ -50507,6 +50833,7 @@ const LEGAL_SECTIONS = [
       "Reports and moderation: when you report a post or comment we store what you reported, your account and your reason. Moderators see the post and the reasons but not who reported it. Reports are kept until the post or your account is deleted. If your account is banned we store the reason, who banned it and when the ban ends. Moderators can also clear a profile's bio and picture. Moderators' actions (removing posts or comments, dismissing reports, bans, clearing profiles) are logged with the moderator's username, the affected username and page, and the reason, and the log is kept for 180 days.",
       "Security: your IP address and account are used to limit how often login, registration, account, posting and reporting requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. Records containing your IP address are deleted within 24 hours. Failed login records are deleted within 25 hours of the last failed attempt, or as soon as you log in successfully. An automatic clean-up runs every hour to enforce these times.",
       "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers.",
+      "Articles: article text and the images, GIFs, videos, audio and live photos in it are stored on our servers and sent to your browser when you open the article. When a moderator adds media from another website, our server downloads a copy once, so viewing the article doesn't contact that website. An article's own content may still load things from other websites (for example an embedded video), and those websites then receive your IP address.",
       "Service providers: the site is hosted on GitHub Pages, accounts are stored with Supabase, and fonts are loaded from Google Fonts. These providers receive your IP address and basic browser information when your browser contacts them, and may keep their own logs under their own policies.",
       "We do not sell your data and we do not use advertising or analytics trackers.",
       "Your choices: you can delete your account at any time from Settings → Delete Account, which removes your username, password hash, profile, discussion posts, comments, ratings and likes from our database (image files follow within 2 hours). You can clear cookies and local storage in your browser settings."
