@@ -45670,26 +45670,47 @@ const fetchCurrentUserRemote = async (sessionToken) => {
 const deleteAccountRemote = async (sessionToken, password) => {
   return callAuthFunction({ action: "delete", password }, sessionToken);
 };
+const SESSION_COOKIE = "backroomspedia_session";
+const COOKIE_NOTICE_COOKIE = "backroomspedia_cookie_notice";
+const getCookie = (name) => {
+  const prefix = `${name}=`;
+  const match = document.cookie.split("; ").find((part) => part.startsWith(prefix));
+  return match ? decodeURIComponent(match.slice(prefix.length)) : null;
+};
+const setCookie = (name, value, maxAgeSeconds) => {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAgeSeconds}; Path=/; SameSite=Lax${secure}`;
+};
+const deleteCookie = (name) => {
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
+};
 const loadSession = () => {
   try {
-    const saved = localStorage.getItem("backroomspedia_session");
+    const saved = getCookie(SESSION_COOKIE);
     if (saved) {
       return JSON.parse(saved);
     }
+    const legacy = localStorage.getItem("backroomspedia_session");
+    if (legacy) {
+      localStorage.removeItem("backroomspedia_session");
+      const session = JSON.parse(legacy);
+      saveSession(session);
+      return session;
+    }
   } catch (e2) {
-    console.error("Failed to load session from storage:", e2);
+    console.error("Failed to load session:", e2);
   }
   return null;
 };
 const saveSession = (session) => {
   try {
     if (session) {
-      localStorage.setItem("backroomspedia_session", JSON.stringify(session));
+      setCookie(SESSION_COOKIE, JSON.stringify(session), 7 * 24 * 60 * 60);
     } else {
-      localStorage.removeItem("backroomspedia_session");
+      deleteCookie(SESSION_COOKIE);
     }
   } catch (e2) {
-    console.error("Failed to save session to storage:", e2);
+    console.error("Failed to save session:", e2);
   }
 };
 const areUsernamesSimilar = (name1, name2) => {
@@ -47087,7 +47108,17 @@ const Backroomspedia = () => {
       }, children: comment.replies.map((reply) => renderComment(reply, pageName, depth + 1)) })
     ] }, comment.id);
   };
-  const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showDiscussionPage ? "discussion" : null;
+  const [showLegalPage, setShowLegalPage] = reactExports.useState(false);
+  const [cookieNoticeDismissed, setCookieNoticeDismissed] = reactExports.useState(() => getCookie(COOKIE_NOTICE_COOKIE) === "1");
+  const dismissCookieNotice = () => {
+    setCookie(COOKIE_NOTICE_COOKIE, "1", 365 * 24 * 60 * 60);
+    setCookieNoticeDismissed(true);
+  };
+  const openLegalPage = () => {
+    setIsSidebarOpen(false);
+    setShowLegalPage(true);
+  };
+  const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showLegalPage ? "legal" : showDiscussionPage ? "discussion" : null;
   const urlPanel = isSidebarOpen && sidebarView === "settings" ? "settings" : null;
   const urlSyncReadyRef = reactExports.useRef(false);
   const [urlNotFound, setUrlNotFound] = reactExports.useState(false);
@@ -47096,10 +47127,11 @@ const Backroomspedia = () => {
       const params = new URLSearchParams(window.location.search);
       const page = params.get("page");
       const panel = params.get("panel");
-      setUrlNotFound(page !== null && !["discussion", "login", "profile"].includes(page) || panel !== null && panel !== "settings");
+      setUrlNotFound(page !== null && !["discussion", "login", "profile", "legal"].includes(page) || panel !== null && panel !== "settings");
       setShowDiscussionPage(page === "discussion");
       setShowLoginPage(page === "login");
       setShowProfilePage(page === "profile");
+      setShowLegalPage(page === "legal");
       if (panel === "settings") {
         setSidebarView("settings");
         setIsSidebarOpen(true);
@@ -47119,7 +47151,7 @@ const Backroomspedia = () => {
     }
     const url = new URL(window.location.href);
     const currentUrlPage = url.searchParams.get("page");
-    const knownUrlPage = ["discussion", "login", "profile"].includes(currentUrlPage) ? currentUrlPage : null;
+    const knownUrlPage = ["discussion", "login", "profile", "legal"].includes(currentUrlPage) ? currentUrlPage : null;
     const knownUrlPanel = url.searchParams.get("panel") === "settings" ? "settings" : null;
     if (knownUrlPage === urlPage && knownUrlPanel === urlPanel) return;
     if (urlPage) url.searchParams.set("page", urlPage);
@@ -47525,6 +47557,8 @@ const Backroomspedia = () => {
     ] }),
     aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(AIChatPanel, { onClose: closeAI, pages, currentLanguage, archiveMetadata, archiveData }),
     showLoginPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LoginPage, { onClose: closeLogin, onLoginSuccess: handleLoginSuccess }),
+    showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose: () => setShowLegalPage(false) }),
+    !cookieNoticeDismissed && !showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(CookieNotice, { onAccept: dismissCookieNotice, onLearnMore: openLegalPage }),
     showCommentHistory && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
       position: "fixed",
       inset: 0,
@@ -49070,12 +49104,15 @@ const Backroomspedia = () => {
           ] })
         ] })
       ] }),
-      activeMenu === null && !aiOverlayOpen && !showProfilePage && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+      activeMenu === null && !aiOverlayOpen && !showProfilePage && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
         marginTop: "600px",
         textAlign: "center",
         color: "#555",
         fontSize: "14px"
-      }, children: "© Backroomspedia, 2026 All rights reserved" })
+      }, children: [
+        "© Backroomspedia, 2026 All rights reserved · ",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { onClick: openLegalPage, style: { cursor: "pointer", textDecoration: "underline" }, children: "Legal" })
+      ] })
     ] }),
     !currentPage && !showProfilePage && activeMenu === null && !aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
       position: "fixed",
@@ -50093,6 +50130,164 @@ ${response}`;
           display: inline-block;
         }
       ` })
+  ] });
+};
+const LEGAL_SECTIONS = [
+  {
+    title: "Terms of Use",
+    items: [
+      "Backroomspedia is a free, fan-made encyclopedia about the Backrooms. By using the site you agree to these terms.",
+      "Do not post content that is illegal, hateful, harassing, sexually explicit or that infringes someone else's rights. Content that breaks these rules may be removed and the account that posted it may be deleted.",
+      "Do not try to break, overload or get around the security of the site, including its login and rate limits.",
+      "The site is provided as is, without any guarantee that it will always be available or error free.",
+      "These terms may change. The date at the top of this page shows when they were last updated."
+    ]
+  },
+  {
+    title: "Privacy Policy",
+    items: [
+      "Account: when you register we store your username and a hashed version of your password (PBKDF2-SHA-256 with a random salt). Your actual password is never stored. We do not ask for your email address or real name.",
+      "Security: your IP address is used to limit how often login, registration and account requests can be made. These records are deleted after one day.",
+      "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers. Discussions, comments and ratings are not currently saved to our servers.",
+      "Service providers: the site is hosted on GitHub Pages, accounts are stored with Supabase, and fonts are loaded from Google Fonts. These providers receive your IP address and basic browser information when your browser contacts them.",
+      "We do not sell your data and we do not use advertising or analytics trackers.",
+      "Your choices: you can delete your account at any time from Settings → Delete Account, which removes your username and password hash from our database. You can clear cookies and local storage in your browser settings."
+    ]
+  },
+  {
+    title: "Cookie Policy",
+    items: [
+      "backroomspedia_session: keeps you logged in. It holds your username and a signed login token, and expires after 7 days or when you log out.",
+      "backroomspedia_cookie_notice: remembers that you have seen the cookie notice, so it is not shown again. It expires after 1 year.",
+      "Both cookies are essential for the site to work as described. We do not use advertising, analytics or tracking cookies.",
+      "You can block or delete cookies in your browser settings. If you do, you will need to log in again each visit."
+    ]
+  },
+  {
+    title: "Contact",
+    items: [
+      "Questions about these terms or your data can be raised on the site's GitHub repository: https://github.com/anjinimani22-jpg/Random83837"
+    ]
+  }
+];
+const LegalPage = ({ onClose }) => {
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+    position: "fixed",
+    inset: 0,
+    background: "#FFF1CF",
+    zIndex: 4e3,
+    overflowY: "auto",
+    padding: "20px",
+    boxSizing: "border-box"
+  }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+    background: "white",
+    border: "2px solid #BDBDBD",
+    padding: "40px 30px",
+    width: "100%",
+    maxWidth: "700px",
+    margin: "0 auto",
+    boxSizing: "border-box"
+  }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "10px"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
+        margin: 0,
+        fontSize: "20px",
+        fontWeight: "normal",
+        color: "black",
+        fontFamily: "'EB Garamond', serif"
+      }, children: "Legal" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, style: {
+        background: "none",
+        border: "1px solid #BDBDBD",
+        fontSize: "14px",
+        cursor: "pointer",
+        color: "black",
+        padding: "4px 10px",
+        fontFamily: "monospace"
+      }, children: "✕ Close" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "12px",
+      color: "#666",
+      margin: "0 0 20px 0"
+    }, children: "Last updated: 29 September 2026" }),
+    LEGAL_SECTIONS.map((section) => /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { style: { marginBottom: "24px" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: {
+        fontFamily: "'EB Garamond', serif",
+        fontSize: "18px",
+        fontWeight: "normal",
+        color: "black",
+        margin: "0 0 8px 0",
+        borderBottom: "1px solid #ddd",
+        paddingBottom: "4px"
+      }, children: section.title }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { style: {
+        margin: 0,
+        paddingLeft: "20px",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: "14px",
+        lineHeight: 1.6,
+        color: "#333"
+      }, children: section.items.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { style: { marginBottom: "6px" }, children: item }, item)) })
+    ] }, section.title))
+  ] }) });
+};
+const CookieNotice = ({ onAccept, onLearnMore }) => {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { role: "region", "aria-label": "Cookie notice", style: {
+    position: "fixed",
+    bottom: "16px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: "calc(100% - 32px)",
+    maxWidth: "560px",
+    background: "white",
+    border: "2px solid #BDBDBD",
+    padding: "16px 20px",
+    boxSizing: "border-box",
+    zIndex: 2900,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+  }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+      fontFamily: "'EB Garamond', serif",
+      fontSize: "18px",
+      color: "black",
+      marginBottom: "6px"
+    }, children: "We use cookies" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "14px",
+      lineHeight: 1.5,
+      color: "#333",
+      margin: "0 0 12px 0"
+    }, children: "We use essential cookies to keep you logged in and to remember this notice. We don't use advertising or tracking cookies." }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      display: "flex",
+      gap: "12px",
+      alignItems: "center"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onAccept, style: {
+        background: "#F3EFE5",
+        border: "2px solid #BDBDBD",
+        padding: "8px 24px",
+        cursor: "pointer",
+        fontSize: "14px",
+        color: "black",
+        fontFamily: "monospace"
+      }, children: "OK" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { onClick: onLearnMore, style: {
+        cursor: "pointer",
+        textDecoration: "underline",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: "14px",
+        color: "black"
+      }, children: "Learn more" })
+    ] })
   ] });
 };
 const LoginPage = ({
