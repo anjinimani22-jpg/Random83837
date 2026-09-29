@@ -50147,7 +50147,7 @@ const LEGAL_SECTIONS = [
     title: "Privacy Policy",
     items: [
       "Account: when you register we store your username and a hashed version of your password (PBKDF2-SHA-256 with a random salt). Your actual password is never stored. We do not ask for your email address or real name.",
-      "Security: your IP address is used to limit how often login, registration and account requests can be made. These records are deleted after one day.",
+      "Security: your IP address is used to limit how often login, registration and account requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. These records are deleted after one day, and failed attempts are cleared as soon as you log in successfully.",
       "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers. Discussions, comments and ratings are not currently saved to our servers.",
       "Service providers: the site is hosted on GitHub Pages, accounts are stored with Supabase, and fonts are loaded from Google Fonts. These providers receive your IP address and basic browser information when your browser contacts them.",
       "We do not sell your data and we do not use advertising or analytics trackers.",
@@ -50341,6 +50341,10 @@ const LoginPage = ({
           setErrors({ username: `Username "${trimmedUsername}" is too similar to existing username "${existingUsername}". Please choose a different username.` });
           return;
         }
+      }
+      if (password.length < 8) {
+        setErrors({ password: "New accounts need a password of 8-128 characters." });
+        return;
       }
       const { status, data } = await registerUserLocal(trimmedUsername, password);
       if (status === 201) {
