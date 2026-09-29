@@ -47054,6 +47054,620 @@ const Backroomspedia = () => {
       }, children: comment.replies.map((reply) => renderComment(reply, pageName, depth + 1)) })
     ] }, comment.id);
   };
+  const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showDiscussionPage ? "discussion" : null;
+  const urlPanel = isSidebarOpen && sidebarView === "settings" ? "settings" : null;
+  const urlSyncReadyRef = reactExports.useRef(false);
+  reactExports.useEffect(() => {
+    const applyUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const page = params.get("page");
+      setShowDiscussionPage(page === "discussion");
+      setShowLoginPage(page === "login");
+      setShowProfilePage(page === "profile");
+      if (params.get("panel") === "settings") {
+        setSidebarView("settings");
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+        setSidebarView("main");
+      }
+    };
+    applyUrl();
+    window.addEventListener("popstate", applyUrl);
+    return () => window.removeEventListener("popstate", applyUrl);
+  }, []);
+  reactExports.useEffect(() => {
+    if (!urlSyncReadyRef.current) {
+      urlSyncReadyRef.current = true;
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("page") === urlPage && url.searchParams.get("panel") === urlPanel) return;
+    if (urlPage) url.searchParams.set("page", urlPage);
+    else url.searchParams.delete("page");
+    if (urlPanel) url.searchParams.set("panel", urlPanel);
+    else url.searchParams.delete("panel");
+    window.history.pushState(null, "", url);
+  }, [urlPage, urlPanel]);
+  const sharedOverlays = /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSidebar, style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.5)",
+      zIndex: 3e3,
+      pointerEvents: isSidebarOpen ? "auto" : "none",
+      opacity: isSidebarOpen ? 1 : 0,
+      transition: "opacity 0.3s ease-out"
+    } }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "240px",
+      height: "100%",
+      background: "white",
+      border: "1px solid #999",
+      overflowY: "auto",
+      padding: "20px",
+      boxSizing: "border-box",
+      zIndex: 3001,
+      transform: isSidebarOpen ? "translateX(0)" : "translateX(-100%)",
+      transition: "transform 0.3s ease-out",
+      pointerEvents: isSidebarOpen ? "auto" : "none"
+    }, children: [
+      sidebarView === "main" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
+            margin: 0,
+            fontSize: "16px",
+            fontWeight: "normal",
+            color: "black"
+          }, children: "Menu" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
+            background: "none",
+            border: "none",
+            fontSize: "18px",
+            cursor: "pointer",
+            color: "black",
+            padding: "4px 8px"
+          }, children: "✕" })
+        ] }),
+        isLoggedIn ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: handleLogout, style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "#e74c3c",
+          borderBottom: "1px solid #ddd"
+        }, children: [
+          "Logout (",
+          username,
+          ")"
+        ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openLogin, style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "black",
+          borderBottom: "1px solid #ddd"
+        }, children: "Login / Register" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
+          if (!isLoggedIn) return;
+          activateAI();
+        }, style: {
+          padding: "10px 0",
+          cursor: isLoggedIn ? "pointer" : "not-allowed",
+          fontSize: "14px",
+          color: isLoggedIn ? "black" : "#999",
+          borderBottom: "1px solid #ddd"
+        }, children: "AI Mode" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openGlobalDiscussion, style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "black",
+          borderBottom: "1px solid #ddd"
+        }, children: "Discuss" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openSettings, style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "black",
+          borderBottom: "1px solid #ddd"
+        }, children: "Settings" })
+      ] }),
+      sidebarView === "settings" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
+            margin: 0,
+            fontSize: "16px",
+            fontWeight: "normal",
+            color: "black"
+          }, children: "Settings" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
+            background: "none",
+            border: "none",
+            fontSize: "18px",
+            cursor: "pointer",
+            color: "black",
+            padding: "4px 8px"
+          }, children: "✕" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
+          setSidebarView("translate");
+        }, style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "black",
+          borderBottom: "1px solid #ddd"
+        }, children: "Translate" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: () => setSidebarView("inbox"), style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "black",
+          borderBottom: "1px solid #ddd",
+          position: "relative"
+        }, children: [
+          "Inbox",
+          friendRequests.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+            position: "absolute",
+            right: "10px",
+            top: "50%",
+            transform: "translateY(-50%)",
+            background: "#e74c3c",
+            color: "white",
+            borderRadius: "50%",
+            width: "20px",
+            height: "20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "11px",
+            fontWeight: "bold"
+          }, children: friendRequests.length })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openProfilePage, style: {
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "black",
+          borderBottom: "1px solid #ddd"
+        }, children: "Profile" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
+          if (!isLoggedIn) return;
+          saveSession(null);
+          setPageDiscussions((prev) => {
+            const updated = {};
+            Object.keys(prev).forEach((page) => {
+              const filterDiscussions = (discs) => {
+                return discs.filter((d2) => d2.user !== username).map((d2) => ({
+                  ...d2,
+                  replies: filterDiscussions(d2.replies)
+                }));
+              };
+              updated[page] = filterDiscussions(prev[page]);
+            });
+            return updated;
+          });
+          setPageComments((prev) => {
+            const updated = {};
+            Object.keys(prev).forEach((page) => {
+              const filterComments = (cmts) => {
+                return cmts.filter((c2) => c2.user !== username).map((c2) => ({
+                  ...c2,
+                  replies: filterComments(c2.replies)
+                }));
+              };
+              updated[page] = filterComments(prev[page]);
+            });
+            return updated;
+          });
+          const updatedRequests = friendRequests.filter((r2) => r2.fromUser !== username);
+          setFriendRequests(updatedRequests);
+          saveFriendRequests(updatedRequests);
+          const updatedSent = sentRequests.filter((r2) => r2.toUser !== username);
+          setSentRequests(updatedSent);
+          saveSentRequests(updatedSent);
+          const updatedFriends = friends.filter((f2) => f2 !== username);
+          setFriends(updatedFriends);
+          saveFriends(updatedFriends);
+          setIsLoggedIn(false);
+          setUserEmail("");
+          setUsername("");
+          setProfileBio("");
+          setProfileAvatar(null);
+          alert("Account and all associated content deleted successfully.");
+          closeSidebar();
+        }, style: {
+          padding: "10px 0",
+          cursor: isLoggedIn ? "pointer" : "not-allowed",
+          fontSize: "14px",
+          color: isLoggedIn ? "#e74c3c" : "#b0a898",
+          opacity: isLoggedIn ? 1 : 0.5,
+          borderBottom: "1px solid #ddd"
+        }, children: "Delete Account" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSettings, style: {
+          marginTop: "20px",
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "#555"
+        }, children: "← Back to Menu" })
+      ] }),
+      sidebarView === "inbox" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
+            margin: 0,
+            fontSize: "16px",
+            fontWeight: "normal",
+            color: "black"
+          }, children: "Inbox" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
+            background: "none",
+            border: "none",
+            fontSize: "18px",
+            cursor: "pointer",
+            color: "black",
+            padding: "4px 8px"
+          }, children: "✕" })
+        ] }),
+        friendRequests.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          textAlign: "center",
+          padding: "40px 20px",
+          fontFamily: "monospace",
+          color: "#666",
+          fontSize: "14px"
+        }, children: "No friend requests" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px"
+        }, children: friendRequests.map((request) => {
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+            padding: "12px",
+            background: "#f9f9f9",
+            border: "1px solid #ddd"
+          }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              marginBottom: "10px"
+            }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                background: request.fromAvatar ? "transparent" : "#C6B49F",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                fontSize: "14px",
+                color: "#666",
+                overflow: "hidden"
+              }, children: request.fromAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: request.fromAvatar, alt: "Avatar", style: {
+                width: "100%",
+                height: "100%",
+                objectFit: "cover"
+              } }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: request.fromUser.charAt(0).toUpperCase() }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+                fontFamily: "monospace",
+                fontSize: "14px",
+                fontWeight: "bold",
+                color: "#333"
+              }, children: request.fromUser }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+                fontFamily: "monospace",
+                fontSize: "11px",
+                color: "#999"
+              }, children: "wants to be friends" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+              display: "flex",
+              gap: "8px"
+            }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => acceptFriendRequest(request.id, request.fromUser), style: {
+                flex: 1,
+                padding: "8px",
+                fontSize: "12px",
+                background: "#4CAF50",
+                border: "none",
+                color: "white",
+                cursor: "pointer",
+                fontFamily: "monospace"
+              }, children: "Accept" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => declineFriendRequest(request.id), style: {
+                flex: 1,
+                padding: "8px",
+                fontSize: "12px",
+                background: "#e74c3c",
+                border: "none",
+                color: "white",
+                cursor: "pointer",
+                fontFamily: "monospace"
+              }, children: "Decline" })
+            ] })
+          ] }, request.id);
+        }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSettings, style: {
+          marginTop: "20px",
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "#555"
+        }, children: "← Back to Settings" })
+      ] }),
+      sidebarView === "translate" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
+            margin: 0,
+            fontSize: "16px",
+            fontWeight: "normal",
+            color: "black"
+          }, children: "Translate" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
+            background: "none",
+            border: "none",
+            fontSize: "18px",
+            cursor: "pointer",
+            color: "black",
+            padding: "4px 8px"
+          }, children: "✕" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px"
+        }, children: languages.map((lang) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => {
+          changeLanguage(lang);
+          setSidebarView("settings");
+        }, style: {
+          padding: "8px 12px",
+          fontSize: "14px",
+          background: currentLanguage === lang ? "#F3EFE5" : "white",
+          border: "1px solid #ddd",
+          cursor: "pointer",
+          textAlign: "left",
+          color: "black"
+        }, children: languageLabels[lang] }, lang)) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSettings, style: {
+          marginTop: "20px",
+          padding: "10px 0",
+          cursor: "pointer",
+          fontSize: "14px",
+          color: "#555"
+        }, children: "← Back to Settings" })
+      ] })
+    ] }),
+    aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(AIChatPanel, { onClose: closeAI, pages, currentLanguage, archiveMetadata, archiveData }),
+    showLoginPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LoginPage, { onClose: closeLogin, onLoginSuccess: handleLoginSuccess }),
+    showCommentHistory && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.5)",
+      zIndex: 5e3,
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: "20px"
+    }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      background: "white",
+      border: "2px solid #BDBDBD",
+      padding: "20px",
+      width: "100%",
+      maxWidth: "500px",
+      maxHeight: "80vh",
+      overflowY: "auto",
+      boxSizing: "border-box"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "20px"
+      }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("h3", { style: {
+          margin: 0,
+          fontSize: "18px",
+          fontFamily: "'EB Garamond', serif"
+        }, children: [
+          "Comment History: ",
+          showCommentHistory.user
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowCommentHistory(null), style: {
+          background: "none",
+          border: "1px solid #BDBDBD",
+          fontSize: "14px",
+          cursor: "pointer",
+          color: "black",
+          padding: "4px 10px",
+          fontFamily: "monospace"
+        }, children: "✕ Close" })
+      ] }),
+      showCommentHistory.comments.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: "#666"
+      }, children: "No comments found." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "15px"
+      }, children: showCommentHistory.comments.map((comment) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+        padding: "12px",
+        background: "#f9f9f9",
+        border: "1px solid #ddd"
+      }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: "8px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+            fontFamily: "monospace",
+            fontSize: "12px",
+            color: "#999"
+          }, children: formatDate(comment.timestamp) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+            fontFamily: "monospace",
+            fontSize: "12px",
+            color: "#C6B49F"
+          }, children: comment.pageName })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+          margin: 0,
+          fontFamily: "monospace",
+          fontSize: "14px",
+          color: "#333"
+        }, children: comment.text }),
+        comment.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: comment.image, alt: "Comment image", style: {
+          marginTop: "8px",
+          maxWidth: "150px",
+          maxHeight: "100px",
+          border: "1px solid #ddd"
+        } })
+      ] }, comment.id)) })
+    ] }) }),
+    showReportModal && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.5)",
+      zIndex: 5e3,
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: "20px"
+    }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      background: "white",
+      border: "2px solid #BDBDBD",
+      padding: "20px",
+      width: "100%",
+      maxWidth: "400px",
+      boxSizing: "border-box"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "20px"
+      }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: {
+          margin: 0,
+          fontSize: "18px",
+          fontFamily: "'EB Garamond', serif"
+        }, children: "Report Comment" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowReportModal(null), style: {
+          background: "none",
+          border: "1px solid #BDBDBD",
+          fontSize: "14px",
+          cursor: "pointer",
+          color: "black",
+          padding: "4px 10px",
+          fontFamily: "monospace"
+        }, children: "✕" })
+      ] }),
+      reportSubmitted ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+          fontFamily: "monospace",
+          fontSize: "14px",
+          color: "#333",
+          marginBottom: "15px"
+        }, children: "Report submitted successfully. An AI moderator will review this comment within 24 hours." }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+          fontFamily: "monospace",
+          fontSize: "12px",
+          color: "#666",
+          marginBottom: "20px"
+        }, children: "The AI will check the comment in the database and analyze it. Action will be taken if the comment contains targeted bullying or slurs. Profanity is allowed unless it's being used for harassment." }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowReportModal(null), style: {
+          width: "100%",
+          padding: "10px",
+          fontSize: "14px",
+          background: "#F3EFE5",
+          border: "2px solid #BDBDBD",
+          cursor: "pointer",
+          fontFamily: "monospace",
+          color: "black"
+        }, children: "Close" })
+      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+          fontFamily: "monospace",
+          fontSize: "13px",
+          color: "#666",
+          marginBottom: "15px"
+        }, children: "Select a reason for reporting this comment:" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          marginBottom: "15px"
+        }, children: reportReasons.map((reason) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setReportReason(reason), style: {
+          padding: "10px 12px",
+          fontSize: "13px",
+          background: reportReason === reason ? "#C6B49F" : "white",
+          border: "1px solid #ccc",
+          cursor: "pointer",
+          textAlign: "left",
+          fontFamily: "monospace",
+          color: "black"
+        }, children: reason }, reason)) }),
+        reportReason === "Other" && /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { value: reportCustomReason, onChange: (e2) => setReportCustomReason(e2.target.value), placeholder: "Please describe the issue...", style: {
+          width: "100%",
+          minHeight: "80px",
+          padding: "10px",
+          fontSize: "13px",
+          border: "1px solid #ccc",
+          resize: "vertical",
+          fontFamily: "monospace",
+          boxSizing: "border-box",
+          marginBottom: "15px"
+        } }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          display: "flex",
+          gap: "10px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowReportModal(null), style: {
+            flex: 1,
+            padding: "10px",
+            fontSize: "14px",
+            background: "white",
+            border: "1px solid #ccc",
+            cursor: "pointer",
+            fontFamily: "monospace",
+            color: "#666"
+          }, children: "Cancel" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: submitReport, disabled: !reportReason || reportReason === "Other" && !reportCustomReason.trim(), style: {
+            flex: 1,
+            padding: "10px",
+            fontSize: "14px",
+            background: reportReason && (reportReason !== "Other" || reportCustomReason.trim()) ? "#e74c3c" : "#ddd",
+            border: "1px solid #ccc",
+            cursor: reportReason && (reportReason !== "Other" || reportCustomReason.trim()) ? "pointer" : "not-allowed",
+            fontFamily: "monospace",
+            color: "white"
+          }, children: "Submit Report" })
+        ] })
+      ] })
+    ] }) }),
+  ] });
   if (showDiscussionPage) {
     const discussionPageName = currentPage || "Discussion";
     return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { key: "discussion-page", style: {
@@ -47215,90 +47829,7 @@ const Backroomspedia = () => {
           marginTop: "20px"
         }, children: currentPage ? "No discussions yet. Start one to suggest improvements!" : "No discussions yet. Start a conversation about the Backrooms!" })
       ] }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSidebar, style: {
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        zIndex: 3e3,
-        pointerEvents: isSidebarOpen ? "auto" : "none",
-        opacity: isSidebarOpen ? 1 : 0,
-        transition: "opacity 0.3s ease-out"
-      } }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "240px",
-        height: "100%",
-        background: "white",
-        padding: "20px",
-        boxSizing: "border-box",
-        zIndex: 3001,
-        transform: isSidebarOpen ? "translateX(0)" : "translateX(-100%)",
-        transition: "transform 0.3s ease-out",
-        pointerEvents: isSidebarOpen ? "auto" : "none",
-        color: "black"
-      }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
-            margin: 0,
-            fontSize: "16px",
-            fontWeight: "normal"
-          }, children: "Menu" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
-            background: "none",
-            border: "none",
-            fontSize: "18px",
-            cursor: "pointer",
-            color: "black",
-            padding: "4px 8px"
-          }, children: "✕" })
-        ] }),
-        isLoggedIn ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: handleLogout, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "#e74c3c",
-          borderBottom: "1px solid #ddd"
-        }, children: [
-          "Logout (",
-          username,
-          ")"
-        ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openLogin, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Login / Register" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
-          if (isLoggedIn) activateAI();
-        }, style: {
-          padding: "10px 0",
-          cursor: isLoggedIn ? "pointer" : "not-allowed",
-          fontSize: "14px",
-          color: isLoggedIn ? "black" : "#999",
-          borderBottom: "1px solid #ddd"
-        }, children: "AI Mode" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openGlobalDiscussion, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Discuss" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openSettings, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black"
-        }, children: "Settings" })
-      ] })
+      sharedOverlays
     ] });
   }
   if (showPrintView && currentPage) {
@@ -48691,583 +49222,7 @@ const Backroomspedia = () => {
       } }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => setActiveMenu("archiveList"), className: "menuReturn", children: "← return" })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSidebar, style: {
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.5)",
-      zIndex: 3e3,
-      pointerEvents: isSidebarOpen ? "auto" : "none",
-      opacity: isSidebarOpen ? 1 : 0,
-      transition: "opacity 0.3s ease-out"
-    } }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-      position: "fixed",
-      top: 0,
-      left: 0,
-      width: "240px",
-      height: "100%",
-      background: "white",
-      border: "1px solid #999",
-      overflowY: "auto",
-      padding: "20px",
-      boxSizing: "border-box",
-      zIndex: 3001,
-      transform: isSidebarOpen ? "translateX(0)" : "translateX(-100%)",
-      transition: "transform 0.3s ease-out",
-      pointerEvents: isSidebarOpen ? "auto" : "none"
-    }, children: [
-      sidebarView === "main" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
-            margin: 0,
-            fontSize: "16px",
-            fontWeight: "normal",
-            color: "black"
-          }, children: "Menu" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
-            background: "none",
-            border: "none",
-            fontSize: "18px",
-            cursor: "pointer",
-            color: "black",
-            padding: "4px 8px"
-          }, children: "✕" })
-        ] }),
-        isLoggedIn ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: handleLogout, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "#e74c3c",
-          borderBottom: "1px solid #ddd"
-        }, children: [
-          "Logout (",
-          username,
-          ")"
-        ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openLogin, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Login / Register" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
-          if (!isLoggedIn) return;
-          activateAI();
-        }, style: {
-          padding: "10px 0",
-          cursor: isLoggedIn ? "pointer" : "not-allowed",
-          fontSize: "14px",
-          color: isLoggedIn ? "black" : "#999",
-          borderBottom: "1px solid #ddd"
-        }, children: "AI Mode" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openGlobalDiscussion, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Discuss" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openSettings, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Settings" })
-      ] }),
-      sidebarView === "settings" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
-            margin: 0,
-            fontSize: "16px",
-            fontWeight: "normal",
-            color: "black"
-          }, children: "Settings" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
-            background: "none",
-            border: "none",
-            fontSize: "18px",
-            cursor: "pointer",
-            color: "black",
-            padding: "4px 8px"
-          }, children: "✕" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
-          setSidebarView("translate");
-        }, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Translate" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: () => setSidebarView("inbox"), style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd",
-          position: "relative"
-        }, children: [
-          "Inbox",
-          friendRequests.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
-            position: "absolute",
-            right: "10px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            background: "#e74c3c",
-            color: "white",
-            borderRadius: "50%",
-            width: "20px",
-            height: "20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "11px",
-            fontWeight: "bold"
-          }, children: friendRequests.length })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openProfilePage, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Profile" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
-          if (!isLoggedIn) return;
-          saveSession(null);
-          setPageDiscussions((prev) => {
-            const updated = {};
-            Object.keys(prev).forEach((page) => {
-              const filterDiscussions = (discs) => {
-                return discs.filter((d2) => d2.user !== username).map((d2) => ({
-                  ...d2,
-                  replies: filterDiscussions(d2.replies)
-                }));
-              };
-              updated[page] = filterDiscussions(prev[page]);
-            });
-            return updated;
-          });
-          setPageComments((prev) => {
-            const updated = {};
-            Object.keys(prev).forEach((page) => {
-              const filterComments = (cmts) => {
-                return cmts.filter((c2) => c2.user !== username).map((c2) => ({
-                  ...c2,
-                  replies: filterComments(c2.replies)
-                }));
-              };
-              updated[page] = filterComments(prev[page]);
-            });
-            return updated;
-          });
-          const updatedRequests = friendRequests.filter((r2) => r2.fromUser !== username);
-          setFriendRequests(updatedRequests);
-          saveFriendRequests(updatedRequests);
-          const updatedSent = sentRequests.filter((r2) => r2.toUser !== username);
-          setSentRequests(updatedSent);
-          saveSentRequests(updatedSent);
-          const updatedFriends = friends.filter((f2) => f2 !== username);
-          setFriends(updatedFriends);
-          saveFriends(updatedFriends);
-          setIsLoggedIn(false);
-          setUserEmail("");
-          setUsername("");
-          setProfileBio("");
-          setProfileAvatar(null);
-          alert("Account and all associated content deleted successfully.");
-          closeSidebar();
-        }, style: {
-          padding: "10px 0",
-          cursor: isLoggedIn ? "pointer" : "not-allowed",
-          fontSize: "14px",
-          color: isLoggedIn ? "#e74c3c" : "#b0a898",
-          opacity: isLoggedIn ? 1 : 0.5,
-          borderBottom: "1px solid #ddd"
-        }, children: "Delete Account" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSettings, style: {
-          marginTop: "20px",
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "#555"
-        }, children: "← Back to Menu" })
-      ] }),
-      sidebarView === "inbox" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
-            margin: 0,
-            fontSize: "16px",
-            fontWeight: "normal",
-            color: "black"
-          }, children: "Inbox" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
-            background: "none",
-            border: "none",
-            fontSize: "18px",
-            cursor: "pointer",
-            color: "black",
-            padding: "4px 8px"
-          }, children: "✕" })
-        ] }),
-        friendRequests.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          textAlign: "center",
-          padding: "40px 20px",
-          fontFamily: "monospace",
-          color: "#666",
-          fontSize: "14px"
-        }, children: "No friend requests" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px"
-        }, children: friendRequests.map((request) => {
-          return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-            padding: "12px",
-            background: "#f9f9f9",
-            border: "1px solid #ddd"
-          }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              marginBottom: "10px"
-            }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-                width: "32px",
-                height: "32px",
-                borderRadius: "50%",
-                background: request.fromAvatar ? "transparent" : "#C6B49F",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                fontSize: "14px",
-                color: "#666",
-                overflow: "hidden"
-              }, children: request.fromAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: request.fromAvatar, alt: "Avatar", style: {
-                width: "100%",
-                height: "100%",
-                objectFit: "cover"
-              } }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: request.fromUser.charAt(0).toUpperCase() }) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
-                fontFamily: "monospace",
-                fontSize: "14px",
-                fontWeight: "bold",
-                color: "#333"
-              }, children: request.fromUser }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
-                fontFamily: "monospace",
-                fontSize: "11px",
-                color: "#999"
-              }, children: "wants to be friends" })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-              display: "flex",
-              gap: "8px"
-            }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => acceptFriendRequest(request.id, request.fromUser), style: {
-                flex: 1,
-                padding: "8px",
-                fontSize: "12px",
-                background: "#4CAF50",
-                border: "none",
-                color: "white",
-                cursor: "pointer",
-                fontFamily: "monospace"
-              }, children: "Accept" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => declineFriendRequest(request.id), style: {
-                flex: 1,
-                padding: "8px",
-                fontSize: "12px",
-                background: "#e74c3c",
-                border: "none",
-                color: "white",
-                cursor: "pointer",
-                fontFamily: "monospace"
-              }, children: "Decline" })
-            ] })
-          ] }, request.id);
-        }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSettings, style: {
-          marginTop: "20px",
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "#555"
-        }, children: "← Back to Settings" })
-      ] }),
-      sidebarView === "translate" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "20px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
-            margin: 0,
-            fontSize: "16px",
-            fontWeight: "normal",
-            color: "black"
-          }, children: "Translate" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: closeSidebar, style: {
-            background: "none",
-            border: "none",
-            fontSize: "18px",
-            cursor: "pointer",
-            color: "black",
-            padding: "4px 8px"
-          }, children: "✕" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px"
-        }, children: languages.map((lang) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => {
-          changeLanguage(lang);
-          setSidebarView("settings");
-        }, style: {
-          padding: "8px 12px",
-          fontSize: "14px",
-          background: currentLanguage === lang ? "#F3EFE5" : "white",
-          border: "1px solid #ddd",
-          cursor: "pointer",
-          textAlign: "left",
-          color: "black"
-        }, children: languageLabels[lang] }, lang)) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSettings, style: {
-          marginTop: "20px",
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "#555"
-        }, children: "← Back to Settings" })
-      ] })
-    ] }),
-    aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(AIChatPanel, { onClose: closeAI, pages, currentLanguage, archiveMetadata, archiveData }),
-    showLoginPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LoginPage, { onClose: closeLogin, onLoginSuccess: handleLoginSuccess }),
-    showCommentHistory && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.5)",
-      zIndex: 5e3,
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      padding: "20px"
-    }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-      background: "white",
-      border: "2px solid #BDBDBD",
-      padding: "20px",
-      width: "100%",
-      maxWidth: "500px",
-      maxHeight: "80vh",
-      overflowY: "auto",
-      boxSizing: "border-box"
-    }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "20px"
-      }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("h3", { style: {
-          margin: 0,
-          fontSize: "18px",
-          fontFamily: "'EB Garamond', serif"
-        }, children: [
-          "Comment History: ",
-          showCommentHistory.user
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowCommentHistory(null), style: {
-          background: "none",
-          border: "1px solid #BDBDBD",
-          fontSize: "14px",
-          cursor: "pointer",
-          color: "black",
-          padding: "4px 10px",
-          fontFamily: "monospace"
-        }, children: "✕ Close" })
-      ] }),
-      showCommentHistory.comments.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
-        fontFamily: "monospace",
-        fontSize: "14px",
-        color: "#666"
-      }, children: "No comments found." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-        display: "flex",
-        flexDirection: "column",
-        gap: "15px"
-      }, children: showCommentHistory.comments.map((comment) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        padding: "12px",
-        background: "#f9f9f9",
-        border: "1px solid #ddd"
-      }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: "8px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
-            fontFamily: "monospace",
-            fontSize: "12px",
-            color: "#999"
-          }, children: formatDate(comment.timestamp) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
-            fontFamily: "monospace",
-            fontSize: "12px",
-            color: "#C6B49F"
-          }, children: comment.pageName })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
-          margin: 0,
-          fontFamily: "monospace",
-          fontSize: "14px",
-          color: "#333"
-        }, children: comment.text }),
-        comment.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: comment.image, alt: "Comment image", style: {
-          marginTop: "8px",
-          maxWidth: "150px",
-          maxHeight: "100px",
-          border: "1px solid #ddd"
-        } })
-      ] }, comment.id)) })
-    ] }) }),
-    showReportModal && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.5)",
-      zIndex: 5e3,
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      padding: "20px"
-    }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-      background: "white",
-      border: "2px solid #BDBDBD",
-      padding: "20px",
-      width: "100%",
-      maxWidth: "400px",
-      boxSizing: "border-box"
-    }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "20px"
-      }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: {
-          margin: 0,
-          fontSize: "18px",
-          fontFamily: "'EB Garamond', serif"
-        }, children: "Report Comment" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowReportModal(null), style: {
-          background: "none",
-          border: "1px solid #BDBDBD",
-          fontSize: "14px",
-          cursor: "pointer",
-          color: "black",
-          padding: "4px 10px",
-          fontFamily: "monospace"
-        }, children: "✕" })
-      ] }),
-      reportSubmitted ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
-          fontFamily: "monospace",
-          fontSize: "14px",
-          color: "#333",
-          marginBottom: "15px"
-        }, children: "Report submitted successfully. An AI moderator will review this comment within 24 hours." }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
-          fontFamily: "monospace",
-          fontSize: "12px",
-          color: "#666",
-          marginBottom: "20px"
-        }, children: "The AI will check the comment in the database and analyze it. Action will be taken if the comment contains targeted bullying or slurs. Profanity is allowed unless it's being used for harassment." }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowReportModal(null), style: {
-          width: "100%",
-          padding: "10px",
-          fontSize: "14px",
-          background: "#F3EFE5",
-          border: "2px solid #BDBDBD",
-          cursor: "pointer",
-          fontFamily: "monospace",
-          color: "black"
-        }, children: "Close" })
-      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
-          fontFamily: "monospace",
-          fontSize: "13px",
-          color: "#666",
-          marginBottom: "15px"
-        }, children: "Select a reason for reporting this comment:" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px",
-          marginBottom: "15px"
-        }, children: reportReasons.map((reason) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setReportReason(reason), style: {
-          padding: "10px 12px",
-          fontSize: "13px",
-          background: reportReason === reason ? "#C6B49F" : "white",
-          border: "1px solid #ccc",
-          cursor: "pointer",
-          textAlign: "left",
-          fontFamily: "monospace",
-          color: "black"
-        }, children: reason }, reason)) }),
-        reportReason === "Other" && /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { value: reportCustomReason, onChange: (e2) => setReportCustomReason(e2.target.value), placeholder: "Please describe the issue...", style: {
-          width: "100%",
-          minHeight: "80px",
-          padding: "10px",
-          fontSize: "13px",
-          border: "1px solid #ccc",
-          resize: "vertical",
-          fontFamily: "monospace",
-          boxSizing: "border-box",
-          marginBottom: "15px"
-        } }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          gap: "10px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowReportModal(null), style: {
-            flex: 1,
-            padding: "10px",
-            fontSize: "14px",
-            background: "white",
-            border: "1px solid #ccc",
-            cursor: "pointer",
-            fontFamily: "monospace",
-            color: "#666"
-          }, children: "Cancel" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: submitReport, disabled: !reportReason || reportReason === "Other" && !reportCustomReason.trim(), style: {
-            flex: 1,
-            padding: "10px",
-            fontSize: "14px",
-            background: reportReason && (reportReason !== "Other" || reportCustomReason.trim()) ? "#e74c3c" : "#ddd",
-            border: "1px solid #ccc",
-            cursor: reportReason && (reportReason !== "Other" || reportCustomReason.trim()) ? "pointer" : "not-allowed",
-            fontFamily: "monospace",
-            color: "white"
-          }, children: "Submit Report" })
-        ] })
-      ] })
-    ] }) }),
+    sharedOverlays,
     /* @__PURE__ */ jsxRuntimeExports.jsx("style", { children: `
         .page-card {
           display: block; width: 100%; text-align: left; background: white; border: 2px solid #F3EFE5;
