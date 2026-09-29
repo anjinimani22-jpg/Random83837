@@ -45633,14 +45633,21 @@ const formatDate = (timestamp) => {
 };
 const AUTH_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functions/v1/rapid-processor";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpicWhydWZ5dmhhdmJwbHpyZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMDQ2NjUsImV4cCI6MjEwMjc4MDY2NX0.tUiHKrfasU4vdLTXHeqLBMpfs3dWs8Hhkwe84oRaH94";
+const DISCUSSION_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functions/v1/bright-action";
 const callAuthFunction = async (body, sessionToken) => {
+  return callSupabaseFunction(AUTH_FUNCTION_URL, body, sessionToken);
+};
+const callDiscussionFunction = async (body, sessionToken) => {
+  return callSupabaseFunction(DISCUSSION_FUNCTION_URL, body, sessionToken);
+};
+const callSupabaseFunction = async (url, body, sessionToken) => {
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     apikey: SUPABASE_ANON_KEY
   };
   if (sessionToken) headers["x-session-token"] = sessionToken;
-  const response = await fetch(AUTH_FUNCTION_URL, {
+  const response = await fetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify(body)
@@ -46421,43 +46428,57 @@ const Backroomspedia = () => {
     setPageComments(updated);
     setReportSubmitted(true);
   };
-  reactExports.useCallback(async (pageName) => {
+  const [discussionBusy, setDiscussionBusy] = reactExports.useState(false);
+  const loadDiscussions = reactExports.useCallback(async (pageName) => {
+    try {
+      const { status, data } = await callDiscussionFunction({ action: "list", page: pageName });
+      if (status === 200 && Array.isArray(data.discussions)) {
+        setPageDiscussions((prev) => ({ ...prev, [pageName]: data.discussions }));
+      } else {
+        console.error("Failed to load discussions:", data.error || status);
+      }
+    } catch (e2) {
+      console.error("Failed to load discussions:", e2);
+    }
   }, []);
-  const saveDiscussionLocal = reactExports.useCallback(async (pageName, title, content2) => {
-  }, [username]);
-  const submitDiscussion = (pageName) => {
-    if (!isLoggedIn || !discussionName.trim() || !discussionText.trim()) return;
-    const newDiscussion = {
-      id: Date.now().toString(),
-      name: discussionName.trim(),
-      user: username || "Anonymous",
-      avatar: profileAvatar,
-      text: discussionText.trim(),
-      timestamp: Date.now(),
-      pageName,
-      replies: []
-    };
-    const updated = {
-      ...pageDiscussions,
-      [pageName]: [...pageDiscussions[pageName] || [], newDiscussion]
-    };
-    setPageDiscussions(updated);
-    saveDiscussionLocal(pageName, discussionName.trim(), discussionText.trim());
+  reactExports.useEffect(() => {
+    if (showDiscussionPage) loadDiscussions(currentPage || "Discussion");
+  }, [showDiscussionPage, currentPage, loadDiscussions]);
+  const discussionRequest = async (body) => {
+    const sessionToken = loadSession()?.token;
+    if (!sessionToken) {
+      alert("Please log in first.");
+      return null;
+    }
+    setDiscussionBusy(true);
+    try {
+      const { status, data } = await callDiscussionFunction(body, sessionToken);
+      if (status === 200 || status === 201) return data;
+      alert(data.error || "Something went wrong. Please try again.");
+      return null;
+    } catch (e2) {
+      alert("Could not reach the server. Please try again.");
+      return null;
+    } finally {
+      setDiscussionBusy(false);
+    }
+  };
+  const submitDiscussion = async (pageName) => {
+    if (!isLoggedIn || discussionBusy || !discussionName.trim() || !discussionText.trim()) return;
+    const data = await discussionRequest({ action: "create", page: pageName, name: discussionName.trim(), text: discussionText.trim() });
+    if (!data?.discussion) return;
+    setPageDiscussions((prev) => ({
+      ...prev,
+      [pageName]: [...prev[pageName] || [], data.discussion]
+    }));
     setDiscussionName("");
     setDiscussionText("");
   };
-  const submitDiscussionReply = (pageName, parentDiscussionId) => {
-    if (!isLoggedIn || !discussionReplyText.trim()) return;
-    const newReply = {
-      id: Date.now().toString(),
-      name: "",
-      user: username || "Anonymous",
-      avatar: profileAvatar,
-      text: discussionReplyText.trim(),
-      timestamp: Date.now(),
-      pageName,
-      replies: []
-    };
+  const submitDiscussionReply = async (pageName, parentDiscussionId) => {
+    if (!isLoggedIn || discussionBusy || !discussionReplyText.trim()) return;
+    const data = await discussionRequest({ action: "create", page: pageName, text: discussionReplyText.trim(), parentId: parentDiscussionId });
+    if (!data?.discussion) return;
+    const newReply = data.discussion;
     const addReplyToDiscussion = (discussions) => {
       return discussions.map((discussion) => {
         if (discussion.id === parentDiscussionId) {
@@ -46472,11 +46493,10 @@ const Backroomspedia = () => {
         };
       });
     };
-    const updated = {
-      ...pageDiscussions,
-      [pageName]: addReplyToDiscussion(pageDiscussions[pageName] || [])
-    };
-    setPageDiscussions(updated);
+    setPageDiscussions((prev) => ({
+      ...prev,
+      [pageName]: addReplyToDiscussion(prev[pageName] || [])
+    }));
     setDiscussionReplyText("");
     setReplyingDiscussionTo(null);
   };
@@ -46595,7 +46615,10 @@ const Backroomspedia = () => {
             fontFamily: "'Courier New', Courier, monospace",
             color: "#666"
           }, children: "Reply" }),
-          discussion.user === username && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => {
+          discussion.user === username && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: async () => {
+            if (discussionBusy) return;
+            const data = await discussionRequest({ action: "delete", id: discussion.id });
+            if (!data?.deleted) return;
             const deleteDiscussionFromTree = (discs) => {
               return discs.reduce((acc, d2) => {
                 if (d2.id === discussion.id) return acc;
@@ -46605,11 +46628,10 @@ const Backroomspedia = () => {
                 }];
               }, []);
             };
-            const updated = {
-              ...pageDiscussions,
-              [pageName]: deleteDiscussionFromTree(pageDiscussions[pageName] || [])
-            };
-            setPageDiscussions(updated);
+            setPageDiscussions((prev) => ({
+              ...prev,
+              [pageName]: deleteDiscussionFromTree(prev[pageName] || [])
+            }));
           }, style: {
             padding: "4px 10px",
             fontSize: "11px",
@@ -50137,6 +50159,7 @@ const LEGAL_SECTIONS = [
     title: "Terms of Use",
     items: [
       "Backroomspedia is a free, fan-made encyclopedia about the Backrooms. By using the site you agree to these terms.",
+      "Discussion posts are public and shown with your username. You are responsible for what you post.",
       "Do not post content that is illegal, hateful, harassing, sexually explicit or that infringes someone else's rights. Content that breaks these rules may be removed and the account that posted it may be deleted.",
       "Do not try to break, overload or get around the security of the site, including its login and rate limits.",
       "The site is provided as is, without any guarantee that it will always be available or error free.",
@@ -50147,11 +50170,12 @@ const LEGAL_SECTIONS = [
     title: "Privacy Policy",
     items: [
       "Account: when you register we store your username and a hashed version of your password (PBKDF2-SHA-256 with a random salt). Your actual password is never stored. We do not ask for your email address or real name.",
-      "Security: your IP address is used to limit how often login, registration and account requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. These records are deleted after one day, and failed attempts are cleared as soon as you log in successfully.",
-      "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers. Discussions, comments and ratings are not currently saved to our servers.",
-      "Service providers: the site is hosted on GitHub Pages, accounts are stored with Supabase, and fonts are loaded from Google Fonts. These providers receive your IP address and basic browser information when your browser contacts them.",
+      "Discussions: when you post in a discussion we store the page, title, text and time of the post and which account posted it. Posts are shown with your username to everyone. They are kept until you delete them, the post they reply to is deleted, or your account is deleted.",
+      "Security: your IP address and account are used to limit how often login, registration, account and posting requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. These records are normally deleted about one day after they are created, and failed attempts are cleared as soon as you log in successfully.",
+      "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers. Comments and ratings on articles are not currently saved to our servers.",
+      "Service providers: the site is hosted on GitHub Pages, accounts are stored with Supabase, and fonts are loaded from Google Fonts. These providers receive your IP address and basic browser information when your browser contacts them, and may keep their own logs under their own policies.",
       "We do not sell your data and we do not use advertising or analytics trackers.",
-      "Your choices: you can delete your account at any time from Settings → Delete Account, which removes your username and password hash from our database. You can clear cookies and local storage in your browser settings."
+      "Your choices: you can delete your account at any time from Settings → Delete Account, which removes your username, password hash and all of your discussion posts from our database. You can clear cookies and local storage in your browser settings."
     ]
   },
   {
