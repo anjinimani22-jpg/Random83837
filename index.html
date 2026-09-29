@@ -45631,11 +45631,36 @@ const formatDate = (timestamp) => {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}/${month}/${day}`;
 };
-const fetchUsersLocal = async () => {
-  return [];
+const AUTH_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functions/v1/rapid-processor";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpicWhydWZ5dmhhdmJwbHpyZGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMDQ2NjUsImV4cCI6MjEwMjc4MDY2NX0.tUiHKrfasU4vdLTXHeqLBMpfs3dWs8Hhkwe84oRaH94";
+const callAuthFunction = async (body) => {
+  const response = await fetch(AUTH_FUNCTION_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      apikey: SUPABASE_ANON_KEY
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json().catch(() => ({}));
+  return { status: response.status, data };
 };
-const registerUserLocal = async (email, username, bio = "") => {
-  return true;
+const fetchUsersLocal = async () => {
+  try {
+    const { status, data } = await callAuthFunction({ action: "users" });
+    if (status !== 200 || !Array.isArray(data.users)) return [];
+    return data.users.map((name) => ({ username: name, email: "" }));
+  } catch (e2) {
+    console.error("Failed to load users:", e2);
+    return [];
+  }
+};
+const registerUserLocal = async (username, password) => {
+  return callAuthFunction({ action: "register", username, password });
+};
+const loginUserRemote = async (username, password) => {
+  return callAuthFunction({ action: "login", username, password });
 };
 const findUserLocal = async (email, password) => {
   return null;
@@ -45840,6 +45865,11 @@ const Backroomspedia = () => {
   reactExports.useEffect(() => {
     const restoreSession = async () => {
       const session = loadSession();
+      if (session?.username) {
+        setIsLoggedIn(true);
+        setUsername(session.username);
+        return;
+      }
       if (session) {
         const user = await findUserLocal(session.email, session.password);
         if (user) {
@@ -46044,17 +46074,8 @@ const Backroomspedia = () => {
     setUserEmail(email);
     setUsername(uname);
     setShowLoginPage(false);
-    const session = loadSession();
-    saveSession({
-      email,
-      username: uname,
-      password: session?.password || ""
-    });
-    const user = await findUserLocal(email, session?.password || "");
-    if (user) {
-      setProfileBio(user.bio || "");
-      setProfileAvatar(user.avatar);
-    }
+    saveSession({ username: uname });
+    fetchUsersLocal().then(setApiUsers);
   };
   const handleLogout = () => {
     setIsLoggedIn(false);
@@ -48275,7 +48296,7 @@ const Backroomspedia = () => {
             (a2) => a2.username.toLowerCase().includes(searchValue.toLowerCase().trim()) && a2.username !== username
           );
           if (matchingUsers.length === 0) {
-            return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontFamily: "monospace", fontSize: "16px", color: "#666" }, children: "No users found" });
+            return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontFamily: "Arial, Helvetica, sans-serif", fontSize: "16px", color: "black" }, children: "No users found" });
           }
           return matchingUsers.map((user) => {
             const isFriend = friends.includes(user.username);
@@ -49025,7 +49046,7 @@ const Backroomspedia = () => {
         textAlign: "center",
         color: "#555",
         fontSize: "14px"
-      }, children: "© Backroomspedia" })
+      }, children: "© Backroomspedia, 2026 All rights reserved" })
     ] }),
     !currentPage && !showProfilePage && activeMenu === null && !aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
       position: "fixed",
@@ -50054,28 +50075,59 @@ const LoginPage = ({
   const [password, setPassword] = reactExports.useState("");
   const [errors, setErrors] = reactExports.useState({});
   const [submitted, setSubmitted] = reactExports.useState(false);
+  const [successText, setSuccessText] = reactExports.useState("Account created successfully!");
+  const [busy, setBusy] = reactExports.useState(false);
   const handleSubmit = async (e2) => {
     e2.preventDefault();
-    const existingUsers = await fetchUsersLocal();
-    const existingEmail = email.trim().toLowerCase();
-    const existingUser = existingUsers.find((u2) => u2.email.toLowerCase() === existingEmail);
-    if (existingUser) {
-      setErrors({});
-      setSubmitted(true);
+    if (busy) return;
+    const trimmedUsername = username.trim();
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(trimmedUsername)) {
+      setErrors({ username: "Username must be 3-20 letters, numbers or underscores." });
       return;
     }
-    const allUsernames = existingUsers.map((a2) => a2.username);
-    for (const existingUsername of allUsernames) {
-      if (areUsernamesSimilar(username.trim(), existingUsername)) {
-        setErrors({ username: `Username "${username.trim()}" is too similar to existing username "${existingUsername}". Please choose a different username.` });
+    if (password.length < 6 || password.length > 128) {
+      setErrors({ password: "Password must be 6-128 characters." });
+      return;
+    }
+    setBusy(true);
+    setErrors({});
+    try {
+      const existingUsers = await fetchUsersLocal();
+      const existingUser = existingUsers.find((u2) => u2.username.toLowerCase() === trimmedUsername.toLowerCase());
+      if (existingUser) {
+        const { status, data } = await loginUserRemote(trimmedUsername, password);
+        if (status === 200) {
+          setUsername(data.username || trimmedUsername);
+          setSuccessText("Logged in successfully!");
+          setSubmitted(true);
+        } else if (status === 401) {
+          setErrors({ password: "Wrong username or password." });
+        } else {
+          setErrors({ general: data.error || "Failed to log in. Please try again." });
+        }
         return;
       }
-    }
-    const success = await registerUserLocal(email.trim(), username.trim());
-    if (success) {
-      setSubmitted(true);
-    } else {
-      setErrors({ general: "Failed to register. Please try again." });
+      for (const existingUsername of existingUsers.map((a2) => a2.username)) {
+        if (areUsernamesSimilar(trimmedUsername, existingUsername)) {
+          setErrors({ username: `Username "${trimmedUsername}" is too similar to existing username "${existingUsername}". Please choose a different username.` });
+          return;
+        }
+      }
+      const { status, data } = await registerUserLocal(trimmedUsername, password);
+      if (status === 201) {
+        setUsername(data.username || trimmedUsername);
+        setSuccessText("Account created successfully!");
+        setSubmitted(true);
+      } else if (status === 409) {
+        setErrors({ username: data.error || "Username is already taken." });
+      } else {
+        setErrors({ general: data.error || "Failed to register. Please try again." });
+      }
+    } catch (err2) {
+      console.error("Login / register failed:", err2);
+      setErrors({ general: "Could not reach the server. Please try again." });
+    } finally {
+      setBusy(false);
     }
   };
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
@@ -50126,7 +50178,7 @@ const LoginPage = ({
         fontSize: "14px",
         color: "black",
         marginBottom: "20px"
-      }, children: "Account created successfully!" }),
+      }, children: successText }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onLoginSuccess(email, username), style: {
         background: "#F3EFE5",
         border: "2px solid #BDBDBD",
@@ -50212,7 +50264,7 @@ const LoginPage = ({
         color: "black",
         fontFamily: "monospace",
         width: "100%"
-      }, children: "Submit" })
+      }, disabled: busy, children: busy ? "Please wait..." : "Submit" })
     ] })
   ] }) });
 };
