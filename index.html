@@ -45641,6 +45641,28 @@ const MODERATION_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functi
 const callModerationFunction = async (body, sessionToken) => {
   return callSupabaseFunction(MODERATION_FUNCTION_URL, body, sessionToken);
 };
+const CONTENT_FUNCTION_URL = "https://jbqhrufyvhavbplzrdfp.supabase.co/functions/v1/backroomspedia-content";
+const callContentFunction = async (body, sessionToken) => {
+  return callSupabaseFunction(CONTENT_FUNCTION_URL, body, sessionToken);
+};
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const readImageFile = (onLoad) => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg,image/gif,image/webp";
+  input.onchange = (e2) => {
+    const file = e2.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      alert("Images must be 2 MB or smaller.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => onLoad(ev.target?.result);
+    reader.readAsDataURL(file);
+  };
+  input.click();
+};
 const callDiscussionFunction = async (body, sessionToken) => {
   return callSupabaseFunction(DISCUSSION_FUNCTION_URL, body, sessionToken);
 };
@@ -45865,6 +45887,43 @@ const Backroomspedia = () => {
   const [apiUsers, setApiUsers] = reactExports.useState([]);
   const [isModerator, setIsModerator] = reactExports.useState(false);
   const [openReportCount, setOpenReportCount] = reactExports.useState(0);
+  const [profileAvatars, setProfileAvatars] = reactExports.useState({});
+  const [myProfileStats, setMyProfileStats] = reactExports.useState(null);
+  const [bioSaveState, setBioSaveState] = reactExports.useState("");
+  const rememberAvatars = (profiles) => {
+    if (!profiles || profiles.length === 0) return;
+    setProfileAvatars((prev) => {
+      const next = { ...prev };
+      for (const p2 of profiles) next[p2.username] = p2.avatar || null;
+      return next;
+    });
+  };
+  const loadAvatarsFor = async (usernames) => {
+    const names = [...new Set(usernames.filter(Boolean))].slice(0, 100);
+    if (names.length === 0) return;
+    try {
+      const { status, data } = await callContentFunction({ action: "profiles", usernames: names });
+      if (status === 200) rememberAvatars(data.profiles);
+    } catch (e2) {
+      console.error("Failed to load profile pictures:", e2);
+    }
+  };
+  const loadMyProfile = reactExports.useCallback(async (name) => {
+    try {
+      const { status, data } = await callContentFunction({ action: "profile", username: name });
+      if (status !== 200) return;
+      setProfileBio(data.profile.bio || "");
+      setProfileAvatar(data.profile.avatar || null);
+      setMyProfileStats(data.profile);
+      rememberAvatars([data.profile]);
+    } catch (e2) {
+      console.error("Failed to load profile:", e2);
+    }
+  }, []);
+  reactExports.useEffect(() => {
+    if (isLoggedIn && username) loadMyProfile(username);
+    else setMyProfileStats(null);
+  }, [isLoggedIn, username, loadMyProfile]);
   const [friendRequests, setFriendRequests] = reactExports.useState(() => {
     try {
       const saved = localStorage.getItem("backroomspedia_friend_requests");
@@ -45975,6 +46034,22 @@ const Backroomspedia = () => {
     verticalAlign: "middle"
   }, children: count > 99 ? "99+" : count });
   const [pageRatings, setPageRatings] = reactExports.useState({});
+  const applyRating = (pageName, data) => {
+    setPageRatings((prev) => ({ ...prev, [pageName]: data.rating }));
+    setUserVotes((prev) => ({ ...prev, [pageName]: data.myVote === 1 ? "like" : data.myVote === -1 ? "dislike" : null }));
+  };
+  const ratePage = async (pageName, direction) => {
+    if (!isLoggedIn) {
+      alert("You must be logged in to rate pages.");
+      return;
+    }
+    const current = userVotes[pageName] === "like" ? 1 : userVotes[pageName] === "dislike" ? -1 : 0;
+    const data = await discussionRequest({ action: "rate", page: pageName, vote: current === direction ? 0 : direction }, callContentFunction);
+    if (data && typeof data.rating === "number") {
+      applyRating(pageName, data);
+      if (username) loadMyProfile(username);
+    }
+  };
   const [userVotes, setUserVotes] = reactExports.useState({});
   const [pageComments, setPageComments] = reactExports.useState({});
   const [commentsLoading, setCommentsLoading] = reactExports.useState({});
@@ -46179,21 +46254,31 @@ const Backroomspedia = () => {
   };
   const handleAvatarUpload = () => {
     if (!isLoggedIn) return;
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.onchange = (e2) => {
-      const file = e2.target.files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const avatarUrl = ev.target?.result;
-          setProfileAvatar(avatarUrl);
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-    input.click();
+    readImageFile(async (dataUrl) => {
+      const data = await discussionRequest({ action: "setAvatar", image: dataUrl }, callContentFunction);
+      if (!data?.profile) return;
+      setProfileAvatar(data.profile.avatar || null);
+      setMyProfileStats(data.profile);
+      rememberAvatars([data.profile]);
+    });
+  };
+  const removeAvatar = async () => {
+    if (!isLoggedIn || !profileAvatar || !window.confirm("Remove your profile picture?")) return;
+    const data = await discussionRequest({ action: "setAvatar", image: null }, callContentFunction);
+    if (!data?.profile) return;
+    setProfileAvatar(null);
+    rememberAvatars([data.profile]);
+  };
+  const saveBio = async () => {
+    if (!isLoggedIn || (myProfileStats && myProfileStats.bio === profileBio)) return;
+    setBioSaveState("Saving...");
+    const data = await discussionRequest({ action: "updateProfile", bio: profileBio }, callContentFunction);
+    if (data?.profile) {
+      setMyProfileStats(data.profile);
+      setBioSaveState("Saved");
+    } else {
+      setBioSaveState("");
+    }
   };
   const toggleComments = (pageName) => {
     const willExpand = !expandedComments[pageName];
@@ -46207,43 +46292,42 @@ const Backroomspedia = () => {
   };
   const handleCommentImageUpload = () => {
     if (!isLoggedIn) return;
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.onchange = (e2) => {
-      const file = e2.target.files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          setCommentImage(ev.target?.result);
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-    input.click();
+    readImageFile(setCommentImage);
   };
   const handleReplyImageUpload = () => {
     if (!isLoggedIn) return;
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.onchange = (e2) => {
-      const file = e2.target.files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          setReplyImage(ev.target?.result);
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-    input.click();
+    readImageFile(setReplyImage);
   };
   const fetchComments = reactExports.useCallback(async (pageName) => {
-    setCommentsLoading((prev) => ({ ...prev, [pageName]: false }));
+    setCommentsLoading((prev) => ({ ...prev, [pageName]: true }));
+    try {
+      const { status, data } = await callContentFunction({ action: "comments", page: pageName });
+      if (status === 200 && Array.isArray(data.comments)) {
+        setPageComments((prev) => ({ ...prev, [pageName]: data.comments }));
+      } else {
+        console.error("Failed to load comments:", data.error || status);
+      }
+    } catch (e2) {
+      console.error("Failed to load comments:", e2);
+    } finally {
+      setCommentsLoading((prev) => ({ ...prev, [pageName]: false }));
+    }
   }, []);
-  const saveCommentLocal = reactExports.useCallback(async (pageName, content2, userId) => {
-  }, [username]);
+  const updateCommentInState = (pageName, commentId, change) => {
+    const updateTree = (comments) => comments.map((c2) => c2.id === commentId ? change(c2) : { ...c2, replies: updateTree(c2.replies) });
+    setPageComments((prev) => ({ ...prev, [pageName]: updateTree(prev[pageName] || []) }));
+  };
+  const removeCommentFromState = (pageName, commentId) => {
+    const removeFromTree = (comments) => comments.reduce((acc, c2) => c2.id === commentId ? acc : [...acc, { ...c2, replies: removeFromTree(c2.replies) }], []);
+    setPageComments((prev) => ({ ...prev, [pageName]: removeFromTree(prev[pageName] || []) }));
+  };
+  const voteOnComment = async (pageName, comment, direction) => {
+    if (!isLoggedIn) return;
+    const current = (comment.likes || []).includes(username) ? 1 : (comment.dislikes || []).includes(username) ? -1 : 0;
+    const vote = current === direction ? 0 : direction;
+    const data = await discussionRequest({ action: "voteComment", id: comment.id, vote }, callContentFunction);
+    if (data?.likes) updateCommentInState(pageName, comment.id, (c2) => ({ ...c2, likes: data.likes, dislikes: data.dislikes }));
+  };
   const saveFriendRequests = (requests) => {
     try {
       localStorage.setItem("backroomspedia_friend_requests", JSON.stringify(requests));
@@ -46313,45 +46397,19 @@ const Backroomspedia = () => {
     setSentRequests(updatedSent);
     saveSentRequests(updatedSent);
   };
-  const submitComment = (pageName) => {
-    if (!isLoggedIn || !commentText.trim() && !commentImage) return;
-    const newComment = {
-      id: Date.now().toString(),
-      user: username || "Anonymous",
-      avatar: profileAvatar,
-      text: commentText.trim(),
-      image: commentImage,
-      timestamp: Date.now(),
-      pageName,
-      replies: [],
-      reports: [],
-      likes: [],
-      dislikes: []
-    };
-    const updated = {
-      ...pageComments,
-      [pageName]: [...pageComments[pageName] || [], newComment]
-    };
-    setPageComments(updated);
-    saveCommentLocal(pageName, commentText.trim());
+  const submitComment = async (pageName) => {
+    if (!isLoggedIn || discussionBusy || !commentText.trim() && !commentImage) return;
+    const data = await discussionRequest({ action: "comment", page: pageName, text: commentText.trim(), image: commentImage || null }, callContentFunction);
+    if (!data?.comment) return;
+    setPageComments((prev) => ({ ...prev, [pageName]: [...prev[pageName] || [], data.comment] }));
     setCommentText("");
     setCommentImage(null);
   };
-  const submitReply = (pageName, parentCommentId) => {
-    if (!isLoggedIn || !replyText.trim() && !replyImage) return;
-    const newReply = {
-      id: Date.now().toString(),
-      user: username || "Anonymous",
-      avatar: profileAvatar,
-      text: replyText.trim(),
-      image: replyImage,
-      timestamp: Date.now(),
-      pageName,
-      replies: [],
-      reports: [],
-      likes: [],
-      dislikes: []
-    };
+  const submitReply = async (pageName, parentCommentId) => {
+    if (!isLoggedIn || discussionBusy || !replyText.trim() && !replyImage) return;
+    const data = await discussionRequest({ action: "comment", page: pageName, text: replyText.trim(), image: replyImage || null, parentId: parentCommentId }, callContentFunction);
+    if (!data?.comment) return;
+    const newReply = data.comment;
     const addReplyToComment = (comments) => {
       return comments.map((comment) => {
         if (comment.id === parentCommentId) {
@@ -46366,69 +46424,10 @@ const Backroomspedia = () => {
         };
       });
     };
-    const updated = {
-      ...pageComments,
-      [pageName]: addReplyToComment(pageComments[pageName] || [])
-    };
-    setPageComments(updated);
-    saveCommentLocal(pageName, replyText.trim());
+    setPageComments((prev) => ({ ...prev, [pageName]: addReplyToComment(prev[pageName] || []) }));
     setReplyText("");
     setReplyImage(null);
     setReplyingTo(null);
-  };
-  const toggleLike = (pageName, commentId) => {
-    if (!isLoggedIn) return;
-    const toggleLikeInTree = (comments) => {
-      return comments.map((comment) => {
-        if (comment.id === commentId) {
-          const likes = comment.likes || [];
-          const dislikes = comment.dislikes || [];
-          const hasLiked = likes.includes(username);
-          const hasDisliked = dislikes.includes(username);
-          return {
-            ...comment,
-            likes: hasLiked ? likes.filter((u2) => u2 !== username) : [...likes, username],
-            dislikes: hasDisliked ? dislikes.filter((u2) => u2 !== username) : dislikes
-          };
-        }
-        return {
-          ...comment,
-          replies: toggleLikeInTree(comment.replies)
-        };
-      });
-    };
-    const updated = {
-      ...pageComments,
-      [pageName]: toggleLikeInTree(pageComments[pageName] || [])
-    };
-    setPageComments(updated);
-  };
-  const toggleDislike = (pageName, commentId) => {
-    if (!isLoggedIn) return;
-    const toggleDislikeInTree = (comments) => {
-      return comments.map((comment) => {
-        if (comment.id === commentId) {
-          const likes = comment.likes || [];
-          const dislikes = comment.dislikes || [];
-          const hasDisliked = dislikes.includes(username);
-          const hasLiked = likes.includes(username);
-          return {
-            ...comment,
-            dislikes: hasDisliked ? dislikes.filter((u2) => u2 !== username) : [...dislikes, username],
-            likes: hasLiked ? likes.filter((u2) => u2 !== username) : likes
-          };
-        }
-        return {
-          ...comment,
-          replies: toggleDislikeInTree(comment.replies)
-        };
-      });
-    };
-    const updated = {
-      ...pageComments,
-      [pageName]: toggleDislikeInTree(pageComments[pageName] || [])
-    };
-    setPageComments(updated);
   };
   const getUserComments = (userName) => {
     const allComments = [];
@@ -46447,37 +46446,12 @@ const Backroomspedia = () => {
     }
     return allComments.sort((a2, b2) => b2.timestamp - a2.timestamp);
   };
-  const submitReport = () => {
+  const submitReport = async () => {
     if (!showReportModal || !isLoggedIn) return;
     const reason = reportReason === "Other" ? reportCustomReason : reportReason;
     if (!reason.trim()) return;
-    const newReport = {
-      id: Date.now().toString(),
-      reporter: username,
-      reason: reason.trim(),
-      timestamp: Date.now(),
-      status: "pending"
-    };
-    const addReportToComment = (comments) => {
-      return comments.map((comment) => {
-        if (comment.id === showReportModal.commentId) {
-          return {
-            ...comment,
-            reports: [...comment.reports, newReport]
-          };
-        }
-        return {
-          ...comment,
-          replies: addReportToComment(comment.replies)
-        };
-      });
-    };
-    const updated = {
-      ...pageComments,
-      [showReportModal.comment.pageName]: addReportToComment(pageComments[showReportModal.comment.pageName] || [])
-    };
-    setPageComments(updated);
-    setReportSubmitted(true);
+    const data = await discussionRequest({ action: "report", commentId: showReportModal.commentId, reason: reason.trim() }, callModerationFunction);
+    if (data?.reported) setReportSubmitted(true);
   };
   const [discussionBusy, setDiscussionBusy] = reactExports.useState(false);
   const loadDiscussions = reactExports.useCallback(async (pageName) => {
@@ -46495,6 +46469,44 @@ const Backroomspedia = () => {
   reactExports.useEffect(() => {
     if (showDiscussionPage) loadDiscussions(currentPage || "Discussion");
   }, [showDiscussionPage, currentPage, loadDiscussions]);
+  reactExports.useEffect(() => {
+    if (!currentPage) return;
+    let cancelled = false;
+    callContentFunction({ action: "rating", page: currentPage }, loadSession()?.token).then(({ status, data }) => {
+      if (!cancelled && status === 200) applyRating(currentPage, data);
+    }).catch((e2) => console.error("Failed to load rating:", e2));
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage, isLoggedIn]);
+  reactExports.useEffect(() => {
+    const names = [];
+    const collect = (items) => items.forEach((d2) => {
+      if (!(d2.user in profileAvatars)) names.push(d2.user);
+      collect(d2.replies || []);
+    });
+    Object.values(pageDiscussions).forEach(collect);
+    if (names.length > 0) loadAvatarsFor(names);
+  }, [pageDiscussions]);
+  const viewingUsername = viewingProfile?.username;
+  reactExports.useEffect(() => {
+    if (!viewingUsername) return;
+    let cancelled = false;
+    callContentFunction({ action: "profile", username: viewingUsername }).then(({ status, data }) => {
+      if (cancelled || status !== 200) return;
+      rememberAvatars([data.profile]);
+      setViewingProfile((prev) => prev && prev.username === viewingUsername ? {
+        ...prev,
+        avatar: data.profile.avatar,
+        bio: data.profile.bio,
+        joinDate: formatDate(data.profile.joinedAt),
+        stats: data.profile
+      } : prev);
+    }).catch((e2) => console.error("Failed to load profile:", e2));
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingUsername]);
   const discussionRequest = async (body, callFunction = callDiscussionFunction) => {
     const sessionToken = loadSession()?.token;
     if (!sessionToken) {
@@ -46623,7 +46635,7 @@ const Backroomspedia = () => {
           /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
             setViewingProfile({
               username: discussion.user,
-              avatar: discussion.avatar,
+              avatar: (discussion.avatar || profileAvatars[discussion.user]),
               bio: "",
               joinDate: formatDate(Date.now())
             });
@@ -46631,7 +46643,7 @@ const Backroomspedia = () => {
             width: "32px",
             height: "32px",
             borderRadius: "50%",
-            background: discussion.avatar ? "transparent" : "#C6B49F",
+            background: (discussion.avatar || profileAvatars[discussion.user]) ? "transparent" : "#C6B49F",
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
@@ -46639,7 +46651,7 @@ const Backroomspedia = () => {
             color: "#666",
             overflow: "hidden",
             cursor: "pointer"
-          }, children: discussion.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: discussion.avatar, alt: "Avatar", style: {
+          }, children: (discussion.avatar || profileAvatars[discussion.user]) ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: (discussion.avatar || profileAvatars[discussion.user]), alt: "Avatar", style: {
             width: "100%",
             height: "100%",
             objectFit: "cover"
@@ -46657,7 +46669,7 @@ const Backroomspedia = () => {
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { onClick: () => {
             setViewingProfile({
               username: discussion.user,
-              avatar: discussion.avatar,
+              avatar: (discussion.avatar || profileAvatars[discussion.user]),
               bio: "",
               joinDate: formatDate(Date.now())
             });
@@ -47042,22 +47054,29 @@ const Backroomspedia = () => {
             color: "#e74c3c",
             borderBottom: "1px solid #eee"
           }, onMouseEnter: (e2) => e2.currentTarget.style.background = "#f5f5f5", onMouseLeave: (e2) => e2.currentTarget.style.background = "white", children: "Report" }),
-          comment.user === username && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
-            const deleteCommentFromTree = (comments) => {
-              return comments.reduce((acc, c2) => {
-                if (c2.id === comment.id) return acc;
-                return [...acc, {
-                  ...c2,
-                  replies: deleteCommentFromTree(c2.replies)
-                }];
-              }, []);
-            };
-            const updated = {
-              ...pageComments,
-              [pageName]: deleteCommentFromTree(pageComments[pageName] || [])
-            };
-            setPageComments(updated);
+          isModerator && comment.user !== username && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: async () => {
             setActiveCommentMenu(null);
+            const reason = window.prompt(`Remove this comment by ${comment.user}? Its replies will be removed too.\n\nReason:`);
+            if (reason === null) return;
+            if (!reason.trim()) {
+              alert("Please give a reason.");
+              return;
+            }
+            const data = await discussionRequest({ action: "remove", commentId: comment.id, reason: reason.trim() }, callModerationFunction);
+            if (data?.removed) removeCommentFromState(pageName, comment.id);
+          }, style: {
+            padding: "10px 14px",
+            cursor: "pointer",
+            fontSize: "13px",
+            fontFamily: "monospace",
+            color: "#e74c3c",
+            borderBottom: "1px solid #eee"
+          }, onMouseEnter: (e2) => e2.currentTarget.style.background = "#f5f5f5", onMouseLeave: (e2) => e2.currentTarget.style.background = "white", children: "Remove (moderator)" }),
+          comment.user === username && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: async () => {
+            setActiveCommentMenu(null);
+            if (!window.confirm("Delete this comment? Its replies will be deleted too.")) return;
+            const data = await discussionRequest({ action: "deleteComment", id: comment.id }, callContentFunction);
+            if (data?.deleted) removeCommentFromState(pageName, comment.id);
           }, style: {
             padding: "10px 14px",
             cursor: "pointer",
@@ -47090,7 +47109,7 @@ const Backroomspedia = () => {
           gap: "8px",
           alignItems: "center"
         }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => toggleLike(pageName, comment.id), disabled: !isLoggedIn, style: {
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => voteOnComment(pageName, comment, 1), disabled: !isLoggedIn, style: {
             padding: "4px 8px",
             fontSize: "11px",
             background: "transparent",
@@ -47106,7 +47125,7 @@ const Backroomspedia = () => {
             "▲ ",
             likes.length
           ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => toggleDislike(pageName, comment.id), disabled: !isLoggedIn, style: {
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => voteOnComment(pageName, comment, -1), disabled: !isLoggedIn, style: {
             padding: "4px 8px",
             fontSize: "11px",
             background: "transparent",
@@ -47686,6 +47705,155 @@ const Backroomspedia = () => {
     ] }),
     aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(AIChatPanel, { onClose: closeAI, pages, currentLanguage, archiveMetadata, archiveData }),
     showLoginPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LoginPage, { onClose: closeLogin, onLoginSuccess: handleLoginSuccess }),
+      viewingProfile && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.5)",
+        zIndex: 5e3,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "20px"
+      }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+        background: "white",
+        border: "2px solid #BDBDBD",
+        padding: "30px",
+        width: "100%",
+        maxWidth: "400px",
+        boxSizing: "border-box",
+        color: "black"
+      }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "25px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
+            margin: 0,
+            fontSize: "20px",
+            fontWeight: "normal",
+            fontFamily: "'EB Garamond', serif"
+          }, children: "Profile" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setViewingProfile(null), style: {
+            background: "#F3EFE5",
+            border: "2px solid #BDBDBD",
+            padding: "8px 16px",
+            cursor: "pointer",
+            fontSize: "14px",
+            color: "black",
+            fontFamily: "monospace"
+          }, children: "✕ Close" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          display: "flex",
+          justifyContent: "center",
+          marginBottom: "20px"
+        }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          width: "80px",
+          height: "80px",
+          borderRadius: "50%",
+          border: "3px solid #9c9c9c",
+          background: viewingProfile.avatar ? "transparent" : "#dedede",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          fontSize: "36px",
+          color: "#666",
+          overflow: "hidden"
+        }, children: viewingProfile.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: viewingProfile.avatar, alt: "Avatar", style: {
+          width: "100%",
+          height: "100%",
+          objectFit: "cover"
+        } }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: viewingProfile.username.charAt(0).toUpperCase() }) }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          textAlign: "center",
+          marginBottom: "20px"
+        }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          fontFamily: "monospace",
+          fontSize: "18px",
+          fontWeight: "bold",
+          color: "#333"
+        }, children: [
+          "@",
+          viewingProfile.username.toLowerCase()
+        ] }) }),
+        viewingProfile.bio && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          marginBottom: "20px",
+          padding: "12px",
+          background: "#f9f9f9",
+          border: "1px solid #ddd"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+            fontFamily: "monospace",
+            fontSize: "12px",
+            color: "#555",
+            marginBottom: "6px"
+          }, children: "Bio" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
+            margin: 0,
+            fontFamily: "monospace",
+            fontSize: "14px",
+            color: "#333",
+            lineHeight: "1.5"
+          }, children: viewingProfile.bio })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          padding: "15px",
+          background: "#f9f9f9",
+          border: "1px solid #ddd"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+            fontFamily: "monospace",
+            fontSize: "14px",
+            fontWeight: "bold",
+            marginBottom: "12px",
+            color: "#333"
+          }, children: "Activity" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+            display: "flex",
+            gap: "20px",
+            fontFamily: "monospace",
+            fontSize: "13px",
+            color: "#666"
+          }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+                fontWeight: "bold",
+                color: "#333"
+              }, children: viewingProfile.stats ? viewingProfile.stats.comments : Object.values(pageComments).reduce((acc, comments) => {
+                const countUserComments = (cmts) => {
+                  return cmts.reduce((sum, c2) => {
+                    if (c2.user === viewingProfile.username) {
+                      return sum + 1 + countUserComments(c2.replies);
+                    }
+                    return sum + countUserComments(c2.replies);
+                  }, 0);
+                };
+                return acc + countUserComments(comments);
+              }, 0) }),
+              " comments"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+                fontWeight: "bold",
+                color: "#333"
+              }, children: viewingProfile.stats ? viewingProfile.stats.posts : Object.values(pageDiscussions).reduce((acc, discussions) => {
+                const countUserDiscussions = (discs) => {
+                  return discs.reduce((sum, d2) => {
+                    if (d2.user === viewingProfile.username) {
+                      return sum + 1 + countUserDiscussions(d2.replies);
+                    }
+                    return sum + countUserDiscussions(d2.replies);
+                  }, 0);
+                };
+                return acc + countUserDiscussions(discussions);
+              }, 0) }),
+              " discussions"
+            ] })
+          ] })
+        ] })
+      ] }) }),
     showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose: () => setShowLegalPage(false) }),
     showModerationPage && /* @__PURE__ */ jsxRuntimeExports.jsx(ModerationPage, { onClose: () => {
       setShowModerationPage(false);
@@ -48617,33 +48785,7 @@ const Backroomspedia = () => {
               "Rating: ",
               pageRatings[currentPage] || 0
             ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => {
-              if (!isLoggedIn) {
-                alert("You must be logged in to rate pages.");
-                return;
-              }
-              const currentVote = userVotes[currentPage];
-              if (currentVote === "like") {
-                setUserVotes((prev) => ({
-                  ...prev,
-                  [currentPage]: null
-                }));
-                setPageRatings((prev) => ({
-                  ...prev,
-                  [currentPage]: (prev[currentPage] || 0) - 1
-                }));
-              } else {
-                const delta = currentVote === "dislike" ? 2 : 1;
-                setUserVotes((prev) => ({
-                  ...prev,
-                  [currentPage]: "like"
-                }));
-                setPageRatings((prev) => ({
-                  ...prev,
-                  [currentPage]: (prev[currentPage] || 0) + delta
-                }));
-              }
-            }, style: {
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => ratePage(currentPage, 1), style: {
               background: "none",
               border: "none",
               padding: "0",
@@ -48655,33 +48797,7 @@ const Backroomspedia = () => {
               cursor: isLoggedIn ? "pointer" : "default",
               lineHeight: "1"
             }, children: "+" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => {
-              if (!isLoggedIn) {
-                alert("You must be logged in to rate pages.");
-                return;
-              }
-              const currentVote = userVotes[currentPage];
-              if (currentVote === "dislike") {
-                setUserVotes((prev) => ({
-                  ...prev,
-                  [currentPage]: null
-                }));
-                setPageRatings((prev) => ({
-                  ...prev,
-                  [currentPage]: (prev[currentPage] || 0) + 1
-                }));
-              } else {
-                const delta = currentVote === "like" ? 2 : 1;
-                setUserVotes((prev) => ({
-                  ...prev,
-                  [currentPage]: "dislike"
-                }));
-                setPageRatings((prev) => ({
-                  ...prev,
-                  [currentPage]: (prev[currentPage] || 0) - delta
-                }));
-              }
-            }, style: {
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => ratePage(currentPage, -1), style: {
               background: "none",
               border: "none",
               padding: "0",
@@ -48886,155 +49002,6 @@ const Backroomspedia = () => {
           textDecoration: "underline"
         }, children: "Archives" })
       ] }),
-      viewingProfile && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        zIndex: 5e3,
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: "20px"
-      }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        background: "white",
-        border: "2px solid #BDBDBD",
-        padding: "30px",
-        width: "100%",
-        maxWidth: "400px",
-        boxSizing: "border-box",
-        color: "black"
-      }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "25px"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: {
-            margin: 0,
-            fontSize: "20px",
-            fontWeight: "normal",
-            fontFamily: "'EB Garamond', serif"
-          }, children: "Profile" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setViewingProfile(null), style: {
-            background: "#F3EFE5",
-            border: "2px solid #BDBDBD",
-            padding: "8px 16px",
-            cursor: "pointer",
-            fontSize: "14px",
-            color: "black",
-            fontFamily: "monospace"
-          }, children: "✕ Close" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          display: "flex",
-          justifyContent: "center",
-          marginBottom: "20px"
-        }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          width: "80px",
-          height: "80px",
-          borderRadius: "50%",
-          border: "3px solid #9c9c9c",
-          background: viewingProfile.avatar ? "transparent" : "#dedede",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          fontSize: "36px",
-          color: "#666",
-          overflow: "hidden"
-        }, children: viewingProfile.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: viewingProfile.avatar, alt: "Avatar", style: {
-          width: "100%",
-          height: "100%",
-          objectFit: "cover"
-        } }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: viewingProfile.username.charAt(0).toUpperCase() }) }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          textAlign: "center",
-          marginBottom: "20px"
-        }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          fontFamily: "monospace",
-          fontSize: "18px",
-          fontWeight: "bold",
-          color: "#333"
-        }, children: [
-          "@",
-          viewingProfile.username.toLowerCase()
-        ] }) }),
-        viewingProfile.bio && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          marginBottom: "20px",
-          padding: "12px",
-          background: "#f9f9f9",
-          border: "1px solid #ddd"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-            fontFamily: "monospace",
-            fontSize: "12px",
-            color: "#555",
-            marginBottom: "6px"
-          }, children: "Bio" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: {
-            margin: 0,
-            fontFamily: "monospace",
-            fontSize: "14px",
-            color: "#333",
-            lineHeight: "1.5"
-          }, children: viewingProfile.bio })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          padding: "15px",
-          background: "#f9f9f9",
-          border: "1px solid #ddd"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-            fontFamily: "monospace",
-            fontSize: "14px",
-            fontWeight: "bold",
-            marginBottom: "12px",
-            color: "#333"
-          }, children: "Activity" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-            display: "flex",
-            gap: "20px",
-            fontFamily: "monospace",
-            fontSize: "13px",
-            color: "#666"
-          }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
-                fontWeight: "bold",
-                color: "#333"
-              }, children: Object.values(pageComments).reduce((acc, comments) => {
-                const countUserComments = (cmts) => {
-                  return cmts.reduce((sum, c2) => {
-                    if (c2.user === viewingProfile.username) {
-                      return sum + 1 + countUserComments(c2.replies);
-                    }
-                    return sum + countUserComments(c2.replies);
-                  }, 0);
-                };
-                return acc + countUserComments(comments);
-              }, 0) }),
-              " comments"
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
-                fontWeight: "bold",
-                color: "#333"
-              }, children: Object.values(pageDiscussions).reduce((acc, discussions) => {
-                const countUserDiscussions = (discs) => {
-                  return discs.reduce((sum, d2) => {
-                    if (d2.user === viewingProfile.username) {
-                      return sum + 1 + countUserDiscussions(d2.replies);
-                    }
-                    return sum + countUserDiscussions(d2.replies);
-                  }, 0);
-                };
-                return acc + countUserDiscussions(discussions);
-              }, 0) }),
-              " discussions"
-            ] })
-          ] })
-        ] })
-      ] }) }),
       showProfilePage && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
         background: "white",
         border: "2px solid #BDBDBD",
@@ -49161,8 +49128,9 @@ const Backroomspedia = () => {
             /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { value: profileBio, onChange: (e2) => {
               if (e2.target.value.length <= 300) {
                 setProfileBio(e2.target.value);
+                setBioSaveState("");
               }
-            }, maxLength: 300, placeholder: "Write something about yourself...", style: {
+            }, onBlur: saveBio, maxLength: 300, placeholder: "Write something about yourself...", style: {
               width: "100%",
               height: "120px",
               border: "2px solid #666",
@@ -49190,6 +49158,38 @@ const Backroomspedia = () => {
             ] })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+            display: "flex",
+            gap: "12px",
+            alignItems: "center",
+            marginTop: "-10px",
+            marginBottom: "20px",
+            fontFamily: "monospace",
+            fontSize: "12px",
+            flexWrap: "wrap"
+          }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: saveBio, disabled: discussionBusy, style: {
+              padding: "6px 14px",
+              fontSize: "12px",
+              background: "#F3EFE5",
+              border: "2px solid #BDBDBD",
+              cursor: "pointer",
+              fontFamily: "monospace",
+              color: "black"
+            }, children: "Save bio" }),
+            bioSaveState && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#666" }, children: bioSaveState }),
+            profileAvatar && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: removeAvatar, style: {
+              marginLeft: "auto",
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontFamily: "monospace",
+              fontSize: "12px",
+              color: "#e74c3c",
+              textDecoration: "underline"
+            }, children: "Remove picture" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
             marginTop: "30px",
             padding: "20px",
             background: "#f9f9f9",
@@ -49213,14 +49213,14 @@ const Backroomspedia = () => {
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
                   fontWeight: "bold",
                   color: "#333"
-                }, children: Object.keys(pageRatings).length }),
+                }, children: myProfileStats ? myProfileStats.ratings : Object.keys(pageRatings).length }),
                 " ratings"
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
                   fontWeight: "bold",
                   color: "#333"
-                }, children: Object.values(pageComments).reduce((acc, comments) => {
+                }, children: myProfileStats ? myProfileStats.comments : Object.values(pageComments).reduce((acc, comments) => {
                   const countUserComments = (cmts) => {
                     return cmts.reduce((sum, c2) => {
                       if (c2.user === username) {
@@ -50341,9 +50341,26 @@ const ModerationPage = ({ onClose }) => {
     }
     return reason.trim();
   };
+  const targetOf = (entry) => entry.kind === "comment" ? { commentId: entry.post.id } : { id: entry.post.id, discussionId: entry.post.id };
+  const kindLabel = (entry) => entry.kind === "comment" ? "comment" : "post";
   const removePost = (entry) => {
-    const reason = askReason(`Remove this post by ${entry.post.user}? Its replies will be removed too.\n\nReason:`);
-    if (reason) run({ action: "remove", id: entry.post.id, reason });
+    const reason = askReason(`Remove this ${kindLabel(entry)} by ${entry.post.user}? Its replies will be removed too.\n\nReason:`);
+    if (reason) run({ action: "remove", ...targetOf(entry), reason });
+  };
+  const [clearUsername, setClearUsername] = reactExports.useState("");
+  const [clearReason, setClearReason] = reactExports.useState("");
+  const submitClearProfile = async (e2) => {
+    e2.preventDefault();
+    if (!clearUsername.trim() || !clearReason.trim()) {
+      alert("Please enter a username and a reason.");
+      return;
+    }
+    const ok = await run({ action: "clearProfile", username: clearUsername.trim(), reason: clearReason.trim() }, `Clear ${clearUsername.trim()}'s bio and profile picture?`);
+    if (ok) {
+      alert("Profile cleared.");
+      setClearUsername("");
+      setClearReason("");
+    }
   };
   const banAuthor = (entry) => {
     const days = window.prompt(`Ban ${entry.post.user} from posting for how many days? Leave empty for a permanent ban.`, "7");
@@ -50376,16 +50393,17 @@ const ModerationPage = ({ onClose }) => {
   const cardStyle = { border: "1px solid #eee", background: "#fafafa", padding: "12px", marginBottom: "10px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px", color: "#333", overflowWrap: "anywhere" };
   const metaStyle = { fontSize: "12px", color: "#666", marginBottom: "6px" };
   const renderReports = () => items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No open reports." }) : items.map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `${entry.reports} report${entry.reports === 1 ? "" : "s"} · ${entry.post.isReply ? "Reply" : "Post"} by ${entry.post.user} on "${entry.post.pageName}" · ${formatModTime(entry.post.timestamp)}` }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `${entry.reports} report${entry.reports === 1 ? "" : "s"} · ${entry.kind === "comment" ? entry.post.isReply ? "Comment reply" : "Comment" : entry.post.isReply ? "Reply" : "Post"} by ${entry.post.user} on "${entry.post.pageName}" · ${formatModTime(entry.post.timestamp)}` }),
     entry.post.name && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold", marginBottom: "4px" }, children: entry.post.name }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { whiteSpace: "pre-wrap", marginBottom: "8px" }, children: entry.post.text }),
+    entry.post.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: entry.post.image, alt: "Reported image", style: { display: "block", maxWidth: "240px", maxHeight: "240px", marginBottom: "8px", border: "1px solid #ddd" } }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `Reasons: ${entry.reasons.join(" · ")}` }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => removePost(entry), style: MOD_DANGER_BUTTON_STYLE, children: "Remove post" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => run({ action: "dismiss", discussionId: entry.post.id }, "Dismiss the reports on this post and keep it?"), style: MOD_BUTTON_STYLE, children: "Dismiss reports" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => removePost(entry), style: MOD_DANGER_BUTTON_STYLE, children: entry.kind === "comment" ? "Remove comment" : "Remove post" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => run({ action: "dismiss", ...targetOf(entry) }, `Dismiss the reports on this ${kindLabel(entry)} and keep it?`), style: MOD_BUTTON_STYLE, children: "Dismiss reports" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => banAuthor(entry), style: MOD_DANGER_BUTTON_STYLE, children: "Ban author" })
     ] })
-  ] }, entry.post.id));
+  ] }, `${entry.kind}:${entry.post.id}`));
   const renderBans = () => /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: submitBan, style: { ...cardStyle, display: "flex", flexDirection: "column", gap: "8px" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold" }, children: "Ban a user" }),
@@ -50394,9 +50412,15 @@ const ModerationPage = ({ onClose }) => {
       /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: banReason, onChange: (e2) => setBanReason(e2.target.value), placeholder: "Reason", maxLength: 500, style: MOD_INPUT_STYLE }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { fontSize: "13px", display: "flex", gap: "6px", alignItems: "center" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: banDeletePosts, onChange: (e2) => setBanDeletePosts(e2.target.checked) }),
-        "Also delete all of their posts"
+        "Also delete all of their posts and comments"
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", disabled: busy, style: { ...MOD_DANGER_BUTTON_STYLE, alignSelf: "flex-start", padding: "6px 14px" }, children: "Ban" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: submitClearProfile, style: { ...cardStyle, display: "flex", flexDirection: "column", gap: "8px" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold" }, children: "Clear a profile (bio and picture)" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: clearUsername, onChange: (e2) => setClearUsername(e2.target.value), placeholder: "Username to clear", style: MOD_INPUT_STYLE }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: clearReason, onChange: (e2) => setClearReason(e2.target.value), placeholder: "Reason for clearing", maxLength: 500, style: MOD_INPUT_STYLE }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", disabled: busy, style: { ...MOD_DANGER_BUTTON_STYLE, alignSelf: "flex-start", padding: "6px 14px" }, children: "Clear profile" })
     ] }),
     items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No active bans." }) : items.map((b2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold", marginBottom: "4px" }, children: b2.username }),
@@ -50407,7 +50431,7 @@ const ModerationPage = ({ onClose }) => {
   ] });
   const renderLog = () => items.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: metaStyle, children: "No moderation actions yet." }) : items.map((l2, i2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: formatModTime(l2.timestamp) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: `${l2.moderator} ${l2.action === "remove" ? "removed a post by" : l2.action === "dismiss" ? "dismissed reports on a post by" : l2.action === "ban" ? "banned" : "unbanned"} ${l2.targetUser || "a deleted user"}${l2.targetPage ? ` on "${l2.targetPage}"` : ""}` }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: `${l2.moderator} ${l2.action === "remove" ? "removed a post by" : l2.action === "dismiss" ? "dismissed reports on a post by" : l2.action === "ban" ? "banned" : l2.action === "clear_profile" ? "cleared the profile of" : "unbanned"} ${l2.targetUser || "a deleted user"}${l2.targetPage ? ` on "${l2.targetPage}"` : ""}` }),
     l2.reason && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { ...metaStyle, marginTop: "4px", marginBottom: 0 }, children: `Reason: ${l2.reason}` })
   ] }, i2));
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
@@ -50464,7 +50488,8 @@ const LEGAL_SECTIONS = [
     title: "Terms of Use",
     items: [
       "Backroomspedia is a free, fan-made encyclopedia about the Backrooms. By using the site you agree to these terms.",
-      "Discussion posts are public and shown with your username. You are responsible for what you post.",
+      "Discussion posts, comments, images you attach, page ratings, your bio and your profile picture are public and shown with your username. You are responsible for what you post.",
+      "Only upload images you have the right to share. Profile pictures and comment images must be PNG, JPEG, GIF or WebP files of 2 MB or less.",
       "Do not post content that is illegal, hateful, harassing, sexually explicit or that infringes someone else's rights. Moderators may remove content that breaks these rules and may ban the account that posted it from posting, for a set time or permanently.",
       "Do not try to break, overload or get around the security of the site, including its login and rate limits.",
       "The site is provided as is, without any guarantee that it will always be available or error free.",
@@ -50475,13 +50500,16 @@ const LEGAL_SECTIONS = [
     title: "Privacy Policy",
     items: [
       "Account: when you register we store your username and a hashed version of your password (PBKDF2-SHA-256 with a random salt). Your actual password is never stored. We do not ask for your email address or real name.",
-      "Discussions: when you post in a discussion we store the page, title, text and time of the post and which account posted it. Posts are shown with your username to everyone. They are kept until you delete them, the post they reply to is deleted, or your account is deleted.",
-      "Reports and moderation: when you report a post we store which post you reported, your account and your reason. Moderators see the post and the reasons but not who reported it. Reports are kept until the post or your account is deleted. If your account is banned we store the reason, who banned it and when the ban ends. Moderators' actions (removing posts, dismissing reports, bans) are logged with the moderator's username, the affected username and page, and the reason, and the log is kept for 180 days.",
-      "Security: your IP address and account are used to limit how often login, registration, account, posting and reporting requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. These records are normally deleted about one day after they are created, and failed attempts are cleared as soon as you log in successfully.",
-      "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers. Comments and ratings on articles are not currently saved to our servers.",
+      "Profile: your bio and profile picture are stored and shown to everyone, along with when you joined and how many posts, comments and ratings you have made.",
+      "Discussions and comments: when you post in a discussion or comment on an article we store the page, the text, any title or image, the time and which account posted it. They are shown with your username to everyone and kept until you delete them, the post or comment they reply to is deleted, or your account is deleted.",
+      "Ratings and likes: we store which pages you rated and which comments you liked or disliked. Page ratings are shown as a total score; the usernames that liked or disliked a comment can be seen by others. You can undo a rating or like at any time.",
+      "Images: pictures are stored in Supabase Storage and can be opened by anyone with the link. When you change or remove your picture, delete a comment with an image, or delete your account, the image file is deleted within 2 hours.",
+      "Reports and moderation: when you report a post or comment we store what you reported, your account and your reason. Moderators see the post and the reasons but not who reported it. Reports are kept until the post or your account is deleted. If your account is banned we store the reason, who banned it and when the ban ends. Moderators can also clear a profile's bio and picture. Moderators' actions (removing posts or comments, dismissing reports, bans, clearing profiles) are logged with the moderator's username, the affected username and page, and the reason, and the log is kept for 180 days.",
+      "Security: your IP address and account are used to limit how often login, registration, account, posting and reporting requests can be made. Failed password attempts are counted against the username they were made for, and after 10 failures in 15 minutes that account is locked for 15 minutes. Records containing your IP address are deleted within 24 hours. Failed login records are deleted within 25 hours of the last failed attempt, or as soon as you log in successfully. An automatic clean-up runs every hour to enforce these times.",
+      "Your browser: your friends list and friend requests are stored in your own browser's local storage and are not sent to our servers.",
       "Service providers: the site is hosted on GitHub Pages, accounts are stored with Supabase, and fonts are loaded from Google Fonts. These providers receive your IP address and basic browser information when your browser contacts them, and may keep their own logs under their own policies.",
       "We do not sell your data and we do not use advertising or analytics trackers.",
-      "Your choices: you can delete your account at any time from Settings → Delete Account, which removes your username, password hash and all of your discussion posts from our database. You can clear cookies and local storage in your browser settings."
+      "Your choices: you can delete your account at any time from Settings → Delete Account, which removes your username, password hash, profile, discussion posts, comments, ratings and likes from our database (image files follow within 2 hours). You can clear cookies and local storage in your browser settings."
     ]
   },
   {
