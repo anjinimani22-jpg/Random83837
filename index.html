@@ -45864,6 +45864,7 @@ const Backroomspedia = () => {
   const [searchView, setSearchView] = reactExports.useState("pages");
   const [apiUsers, setApiUsers] = reactExports.useState([]);
   const [isModerator, setIsModerator] = reactExports.useState(false);
+  const [openReportCount, setOpenReportCount] = reactExports.useState(0);
   const [friendRequests, setFriendRequests] = reactExports.useState(() => {
     try {
       const saved = localStorage.getItem("backroomspedia_friend_requests");
@@ -45928,22 +45929,51 @@ const Backroomspedia = () => {
     };
     restoreSession();
   }, []);
-  reactExports.useEffect(() => {
+  const refreshModeratorStatus = reactExports.useCallback(async () => {
     const sessionToken = loadSession()?.token;
-    if (!isLoggedIn || !sessionToken) {
+    if (!sessionToken) {
       setIsModerator(false);
+      setOpenReportCount(0);
       return;
     }
-    let cancelled = false;
-    callModerationFunction({ action: "status" }, sessionToken).then(({ status, data }) => {
-      if (!cancelled) setIsModerator(status === 200 && data.moderator === true);
-    }).catch(() => {
-      if (!cancelled) setIsModerator(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoggedIn, username]);
+    try {
+      const { status, data } = await callModerationFunction({ action: "status" }, sessionToken);
+      const moderator = status === 200 && data.moderator === true;
+      setIsModerator(moderator);
+      setOpenReportCount(moderator && Number.isInteger(data.openReports) ? data.openReports : 0);
+    } catch (e2) {
+      console.error("Failed to load moderator status:", e2);
+    }
+  }, []);
+  reactExports.useEffect(() => {
+    if (!isLoggedIn) {
+      setIsModerator(false);
+      setOpenReportCount(0);
+      return;
+    }
+    refreshModeratorStatus();
+  }, [isLoggedIn, username, refreshModeratorStatus]);
+  reactExports.useEffect(() => {
+    if (!isModerator) return;
+    const interval = setInterval(refreshModeratorStatus, 60 * 1e3);
+    return () => clearInterval(interval);
+  }, [isModerator, refreshModeratorStatus]);
+  const renderCountBadge = (count) => count > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { "aria-label": `${count} open report${count === 1 ? "" : "s"}`, style: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: "20px",
+    height: "20px",
+    padding: "0 6px",
+    marginLeft: "8px",
+    borderRadius: "10px",
+    background: "#e74c3c",
+    color: "white",
+    fontSize: "11px",
+    fontWeight: "bold",
+    boxSizing: "border-box",
+    verticalAlign: "middle"
+  }, children: count > 99 ? "99+" : count });
   const [pageRatings, setPageRatings] = reactExports.useState({});
   const [userVotes, setUserVotes] = reactExports.useState({});
   const [pageComments, setPageComments] = reactExports.useState({});
@@ -47343,13 +47373,13 @@ const Backroomspedia = () => {
           color: "black",
           borderBottom: "1px solid #ddd"
         }, children: "Discuss" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openSettings, style: {
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: openSettings, style: {
           padding: "10px 0",
           cursor: "pointer",
           fontSize: "14px",
           color: "black",
           borderBottom: "1px solid #ddd"
-        }, children: "Settings" })
+        }, children: ["Settings", isModerator && renderCountBadge(openReportCount)] })
       ] }),
       sidebarView === "settings" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
@@ -47415,13 +47445,13 @@ const Backroomspedia = () => {
           color: "black",
           borderBottom: "1px solid #ddd"
         }, children: "Profile" }),
-        isModerator && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openModerationPage, style: {
+        isModerator && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: openModerationPage, style: {
           padding: "10px 0",
           cursor: "pointer",
           fontSize: "14px",
           color: "black",
           borderBottom: "1px solid #ddd"
-        }, children: "Moderation" }),
+        }, children: ["Moderation", renderCountBadge(openReportCount)] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: async () => {
           if (!isLoggedIn) return;
           const password = window.prompt("Enter your password to permanently delete your account:");
@@ -47657,7 +47687,10 @@ const Backroomspedia = () => {
     aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx(AIChatPanel, { onClose: closeAI, pages, currentLanguage, archiveMetadata, archiveData }),
     showLoginPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LoginPage, { onClose: closeLogin, onLoginSuccess: handleLoginSuccess }),
     showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose: () => setShowLegalPage(false) }),
-    showModerationPage && /* @__PURE__ */ jsxRuntimeExports.jsx(ModerationPage, { onClose: () => setShowModerationPage(false) }),
+    showModerationPage && /* @__PURE__ */ jsxRuntimeExports.jsx(ModerationPage, { onClose: () => {
+      setShowModerationPage(false);
+      refreshModeratorStatus();
+    } }),
     !cookieNoticeDismissed && !showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(CookieNotice, { onAccept: dismissCookieNotice, onLearnMore: openLegalPage }),
     showCommentHistory && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
       position: "fixed",
