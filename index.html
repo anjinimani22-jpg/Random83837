@@ -47057,14 +47057,17 @@ const Backroomspedia = () => {
   const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showDiscussionPage ? "discussion" : null;
   const urlPanel = isSidebarOpen && sidebarView === "settings" ? "settings" : null;
   const urlSyncReadyRef = reactExports.useRef(false);
+  const [urlNotFound, setUrlNotFound] = reactExports.useState(false);
   reactExports.useEffect(() => {
     const applyUrl = () => {
       const params = new URLSearchParams(window.location.search);
       const page = params.get("page");
+      const panel = params.get("panel");
+      setUrlNotFound(page !== null && !["discussion", "login", "profile"].includes(page) || panel !== null && panel !== "settings");
       setShowDiscussionPage(page === "discussion");
       setShowLoginPage(page === "login");
       setShowProfilePage(page === "profile");
-      if (params.get("panel") === "settings") {
+      if (panel === "settings") {
         setSidebarView("settings");
         setIsSidebarOpen(true);
       } else {
@@ -47082,13 +47085,25 @@ const Backroomspedia = () => {
       return;
     }
     const url = new URL(window.location.href);
-    if (url.searchParams.get("page") === urlPage && url.searchParams.get("panel") === urlPanel) return;
+    const currentUrlPage = url.searchParams.get("page");
+    const knownUrlPage = ["discussion", "login", "profile"].includes(currentUrlPage) ? currentUrlPage : null;
+    const knownUrlPanel = url.searchParams.get("panel") === "settings" ? "settings" : null;
+    if (knownUrlPage === urlPage && knownUrlPanel === urlPanel) return;
     if (urlPage) url.searchParams.set("page", urlPage);
     else url.searchParams.delete("page");
     if (urlPanel) url.searchParams.set("panel", urlPanel);
     else url.searchParams.delete("panel");
     window.history.pushState(null, "", url);
+    setUrlNotFound(false);
   }, [urlPage, urlPanel]);
+  reactExports.useEffect(() => {
+    if (!currentPage || !urlNotFound) return;
+    setUrlNotFound(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("page");
+    url.searchParams.delete("panel");
+    window.history.replaceState(null, "", url);
+  }, [currentPage, urlNotFound]);
   const sharedOverlays = /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSidebar, style: {
       position: "fixed",
@@ -48229,6 +48244,11 @@ const Backroomspedia = () => {
           }, children: "No results" })
         ] })
       ] }),
+      !currentPage && !showProfilePage && activeMenu === null && urlNotFound && searchValue.trim() === "" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+        fontSize: "20px",
+        lineHeight: "1.7",
+        color: "black"
+      }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "404 Not Found!" }) }),
       !currentPage && !showProfilePage && activeMenu === null && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
         fontSize: "20px",
         lineHeight: "1.7",
