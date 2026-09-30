@@ -45602,31 +45602,8 @@ const SqueezedAudioPlayer = ({
 async function callAI(options) {
   throw new Error("AI unavailable");
 }
-const getInitialLanguage = () => {
-  if (typeof navigator === "undefined") return "English";
-  const locale = navigator.language.toLowerCase();
-  const languageByLocale = {
-    en: "English",
-    vi: "Tiếng Việt",
-    th: "ภาษาไทย",
-    ur: "اردو",
-    ja: "Japanese",
-    es: "Spanish",
-    fr: "French",
-    de: "German",
-    it: "Italian",
-    pt: "Portuguese",
-    zh: "Chinese",
-    ko: "Korean",
-    ru: "Russian",
-    ar: "Arabic",
-    hi: "Hindi",
-    nl: "Dutch",
-    tr: "Turkish",
-    pl: "Polish"
-  };
-  return languageByLocale[locale.split("-")[0]] || "English";
-};
+// Translation needs the AI service, which the site no longer has, so pages are always shown as written.
+const getInitialLanguage = () => "English";
 const formatDate = (timestamp) => {
   const date = new Date(timestamp);
   const year = date.getFullYear();
@@ -46156,6 +46133,12 @@ const Backroomspedia = () => {
     if (index) applyArticleIndex(index);
   }, []);
   const articleLoadingRef = reactExports.useRef(null);
+  // A different article starts at its top rather than where the last page was scrolled to.
+  const shownArticleRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    if (currentPage && shownArticleRef.current && shownArticleRef.current !== currentPage) window.scrollTo(0, 0);
+    shownArticleRef.current = currentPage;
+  }, [currentPage]);
   reactExports.useEffect(() => {
     if (!currentPage || typeof pages[currentPage] === "string" || articleLoadingRef.current === currentPage) return;
     const requested = currentPage;
@@ -47610,16 +47593,6 @@ const Backroomspedia = () => {
           color: "black",
           borderBottom: "1px solid #ddd"
         }, children: "Login / Register" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
-          if (!isLoggedIn) return;
-          activateAI();
-        }, style: {
-          padding: "10px 0",
-          cursor: isLoggedIn ? "pointer" : "not-allowed",
-          fontSize: "14px",
-          color: isLoggedIn ? "black" : "#999",
-          borderBottom: "1px solid #ddd"
-        }, children: "AI Mode" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: openGlobalDiscussion, style: {
           padding: "10px 0",
           cursor: "pointer",
@@ -47657,15 +47630,6 @@ const Backroomspedia = () => {
             padding: "4px 8px"
           }, children: "✕" })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => {
-          setSidebarView("translate");
-        }, style: {
-          padding: "10px 0",
-          cursor: "pointer",
-          fontSize: "14px",
-          color: "black",
-          borderBottom: "1px solid #ddd"
-        }, children: "Translate" }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: () => setSidebarView("inbox"), style: {
           padding: "10px 0",
           cursor: "pointer",
@@ -48714,7 +48678,7 @@ const Backroomspedia = () => {
       width: "100%",
       maxWidth: "900px",
       margin: "0 auto",
-      padding: "30px",
+      padding: "clamp(12px, 4vw, 30px)",
       boxSizing: "border-box"
     }, children: [
       !currentPage && !showProfilePage && activeMenu === null && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
@@ -48999,11 +48963,11 @@ const Backroomspedia = () => {
       currentPage && activeMenu === null && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
         background: "white",
         border: "2px solid #BDBDBD",
-        padding: "25px",
+        padding: "clamp(14px, 4vw, 25px)",
         paddingBottom: "150px",
-        width: "95%",
+        width: "100%",
         minHeight: "650px",
-        margin: "30px auto",
+        margin: "clamp(8px, 3vw, 30px) auto",
         boxSizing: "border-box",
         position: "relative",
         color: "black"
@@ -49030,7 +48994,7 @@ const Backroomspedia = () => {
           alignItems: "center",
           gap: "4px 12px",
           marginBottom: "14px",
-          paddingRight: isModerator ? "60px" : 0,
+          paddingRight: isModerator ? "80px" : 0,
           fontFamily: "Arial, Helvetica, sans-serif",
           fontSize: "13px"
         }, children: [
@@ -49280,14 +49244,7 @@ const Backroomspedia = () => {
           color: "#333",
           cursor: "pointer",
           textDecoration: "underline"
-        }, children: "Print" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { onClick: openChanger, style: {
-          fontFamily: "'Courier New', Courier, monospace",
-          fontSize: "14px",
-          color: "#333",
-          cursor: "pointer",
-          textDecoration: "underline"
-        }, children: "Archives" })
+        }, children: "Print" })
       ] }),
       showProfilePage && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
         background: "white",
@@ -49875,10 +49832,15 @@ const ARTICLE_FRAME_HELPER = `<script>(function () {
     el.addEventListener("blur", function () { live(el, false); });
     el.addEventListener("touchstart", function () { live(el, !el.classList.contains("bp-playing")); }, { passive: true });
   });
+  // Measures the article itself, not the frame: the document's scrollHeight is never less than the
+  // frame's own height, so using it would make the frame grow every time it is resized.
   var last = 0;
   function height() {
-    var h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
-    if (h !== last) { last = h; send({ type: "height", height: h }); }
+    var b = document.body;
+    if (!b) return;
+    var cs = getComputedStyle(b);
+    var h = Math.ceil(Math.max(b.getBoundingClientRect().height, b.scrollHeight) + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0));
+    if (Math.abs(h - last) > 1) { last = h; send({ type: "height", height: h }); }
   }
   window.addEventListener("load", height);
   window.addEventListener("resize", height);
@@ -49908,7 +49870,7 @@ const ArticleFrame = ({ html, title, onOpenPage }) => {
       if (!frameRef.current || e2.source !== frameRef.current.contentWindow) return;
       const msg = e2.data;
       if (!msg || msg.bp !== true) return;
-      if (msg.type === "height" && Number.isFinite(msg.height)) setHeight(Math.min(Math.max(Math.ceil(msg.height) + 4, 60), 5e4));
+      if (msg.type === "height" && Number.isFinite(msg.height)) setHeight(Math.min(Math.max(Math.ceil(msg.height), 60), 5e4));
       if (msg.type === "open-page" && typeof msg.title === "string" && msg.title.length <= 200 && onOpenPage) onOpenPage(msg.title);
     };
     window.addEventListener("message", onMessage);
