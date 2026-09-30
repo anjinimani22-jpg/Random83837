@@ -46128,10 +46128,23 @@ const Backroomspedia = () => {
   const archiveMetadata = {};
   const archiveData = {};
   const [pages, setPages] = reactExports.useState({});
+  const [articleMeta, setArticleMeta] = reactExports.useState({});
+  const [categoryView, setCategoryView] = reactExports.useState(null);
+  const applyArticleIndex = (index) => {
+    setArticleMeta(index);
+    setPages((prev) => {
+      const next = {};
+      for (const title of Object.keys(index)) next[title] = prev[title] ?? null;
+      return next;
+    });
+  };
   reactExports.useEffect(() => {
     let cancelled = false;
-    fetchPagesLocal().then((fetched) => {
-      if (!cancelled) setPages((prev) => ({ ...fetched, ...prev }));
+    fetchArticleIndex().then((index) => {
+      if (!cancelled && index) {
+        setArticleMeta(index);
+        setPages((prev) => ({ ...Object.fromEntries(Object.keys(index).map((t) => [t, null])), ...prev }));
+      }
     });
     return () => {
       cancelled = true;
@@ -46139,12 +46152,8 @@ const Backroomspedia = () => {
   }, []);
   const [articleEditTarget, setArticleEditTarget] = reactExports.useState(null);
   const refreshArticleList = reactExports.useCallback(async () => {
-    const fetched = await fetchPagesLocal();
-    setPages((prev) => {
-      const next = {};
-      for (const title of Object.keys(fetched)) next[title] = prev[title] ?? null;
-      return next;
-    });
+    const index = await fetchArticleIndex();
+    if (index) applyArticleIndex(index);
   }, []);
   const articleLoadingRef = reactExports.useRef(null);
   reactExports.useEffect(() => {
@@ -46154,6 +46163,10 @@ const Backroomspedia = () => {
     callArticlesFunction({ action: "page", title: requested }).then(({ status, data }) => {
       if (status === 200 && typeof data.html === "string") {
         setPages((prev) => ({ ...prev, [data.title]: data.html }));
+        setArticleMeta((prev) => ({ ...prev, [data.title]: {
+          filters: Array.isArray(data.filters) ? data.filters : [],
+          categories: Array.isArray(data.categories) ? data.categories : []
+        } }));
         setCurrentPage((current) => current === requested && data.title !== requested ? data.title : current);
       } else if (status === 404) {
         // Drop the article from the address first so the 404 message isn't cleared by the address sync.
@@ -46171,24 +46184,42 @@ const Backroomspedia = () => {
       if (articleLoadingRef.current === requested) articleLoadingRef.current = null;
     });
   }, [currentPage, pages]);
-  // Searches article titles, narrowed to the selected filter tags. With listAll, lists every article
-  // (still narrowed by the tags), which is what the Library link shows.
+  // Searches article titles; the selected filters then narrow the results here in the browser, using
+  // each article's filters from the article list. With listAll, starts from every article (the Library).
   const runSearch = async (listAll = false) => {
     const text2 = listAll ? "" : searchValue.toLowerCase().trim();
     const tags = selectedTags;
     if (listAll) setSearchValue("");
-    const fetched = text2 === "" && tags.length === 0 && !listAll ? {} : await fetchPagesLocal(text2, tags);
-    if (Object.keys(fetched).length > 0) {
-      setPages((prev) => ({ ...fetched, ...prev }));
+    let meta = articleMeta;
+    if (listAll || tags.length > 0) {
+      const index = await fetchArticleIndex();
+      if (index) {
+        meta = index;
+        applyArticleIndex(index);
+      }
     }
-    // Pages already loaded can only be matched by title here, so skip them when filtering by tag.
-    const localMatches = text2 === "" || tags.length > 0 ? [] : Object.keys(pages).filter((name) => name.toLowerCase().includes(text2));
-    const matchingPages = [...new Set([...Object.keys(fetched), ...localMatches])];
+    let matchingPages;
+    if (text2 === "") {
+      matchingPages = listAll || tags.length > 0 ? Object.keys(meta) : [];
+    } else {
+      const fetched = await fetchPagesLocal(text2);
+      if (Object.keys(fetched).length > 0) {
+        setPages((prev) => ({ ...fetched, ...prev }));
+      }
+      matchingPages = [...new Set([...Object.keys(fetched), ...Object.keys(pages).filter((name) => name.toLowerCase().includes(text2))])];
+    }
+    if (tags.length > 0) {
+      matchingPages = matchingPages.filter((title) => {
+        const own = meta[title]?.filters || [];
+        return tags.every((tag) => own.some((f) => sameTag(f, tag)));
+      });
+    }
     setResults(matchingPages);
     setLastResults(matchingPages);
     setResultPage(1);
     setPageWindowStart(1);
     setHasSearched(text2 !== "" || tags.length > 0 || listAll);
+    setCategoryView(null);
     setCurrentPage(null);
     setSearchView("pages");
     setActiveMenu(null);
@@ -46196,6 +46227,33 @@ const Backroomspedia = () => {
     setShowDiscussionPage(false);
     setShowPrintView(false);
   };
+  // Lists the articles in a category (clicked at the top of an article).
+  const openCategory = async (category) => {
+    const index = await fetchArticleIndex(category);
+    const titles = index ? Object.keys(index) : [];
+    setSearchValue("");
+    setResults(titles);
+    setLastResults(titles);
+    setResultPage(1);
+    setPageWindowStart(1);
+    setHasSearched(true);
+    setCategoryView(category);
+    setCurrentPage(null);
+    setSearchView("pages");
+    setActiveMenu(null);
+    setShowProfilePage(false);
+    setShowDiscussionPage(false);
+    setShowPrintView(false);
+  };
+  // Every filter used by an article, for the Filter panel.
+  const availableFilters = reactExports.useMemo(() => {
+    const seen = new Map();
+    for (const meta of Object.values(articleMeta)) {
+      for (const f of meta.filters || []) if (!seen.has(f.toLowerCase())) seen.set(f.toLowerCase(), f);
+    }
+    for (const f of selectedTags) if (!seen.has(f.toLowerCase())) seen.set(f.toLowerCase(), f);
+    return [...seen.values()].sort((a, b) => a.localeCompare(b, void 0, { numeric: true, sensitivity: "base" }));
+  }, [articleMeta, selectedTags]);
   const handleKeyDown = (e2) => {
     if (e2.key === "Enter") runSearch();
   };
@@ -46227,6 +46285,7 @@ const Backroomspedia = () => {
     setSearchView("pages");
   };
   const homePage = () => {
+    setCategoryView(null);
     setResults([]);
     setSearchValue("");
     setResultPage(1);
@@ -48761,9 +48820,10 @@ const Backroomspedia = () => {
           boxSizing: "border-box"
         }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "13px", alignSelf: "center", marginRight: "4px" }, children: "Available:" }),
-          ARTICLE_TAGS.map((tag) => {
-            const on = selectedTags.includes(tag);
-            return /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-pressed": on, onClick: () => setSelectedTags((prev) => on ? prev.filter((t) => t !== tag) : [...prev, tag]), style: {
+          availableFilters.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "13px", color: "#666", alignSelf: "center" }, children: "No filters yet." }),
+          availableFilters.map((tag) => {
+            const on = selectedTags.some((t) => sameTag(t, tag));
+            return /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-pressed": on, onClick: () => setSelectedTags((prev) => on ? prev.filter((t) => !sameTag(t, tag)) : [...prev, tag]), style: {
               padding: "4px 10px",
               fontFamily: "inherit",
               fontSize: "13px",
@@ -48811,6 +48871,15 @@ const Backroomspedia = () => {
             cursor: "pointer"
           }, children: "Discussions" })
         ] })
+      ] }),
+      !currentPage && !showProfilePage && activeMenu === null && categoryView && searchView === "pages" && /* @__PURE__ */ jsxRuntimeExports.jsxs("h2", { style: {
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: "20px",
+        fontWeight: "normal",
+        margin: "0 0 12px 0"
+      }, children: [
+        "Category: ",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#0645ad" }, children: categoryView })
       ] }),
       !currentPage && !showProfilePage && activeMenu === null && urlNotFound && searchValue.trim() === "" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
         fontSize: "20px",
@@ -48955,6 +49024,29 @@ const Backroomspedia = () => {
           color: "black",
           zIndex: 2
         }, children: "Edit" }),
+        (articleMeta[currentPage]?.categories || []).length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("nav", { "aria-label": "Categories", className: "article-categories", style: {
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "6px",
+          marginBottom: "14px",
+          paddingRight: isModerator ? "60px" : 0,
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: "13px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#555" }, children: "Categories:" }),
+          articleMeta[currentPage].categories.map((category) => /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "#", onClick: (e2) => {
+            e2.preventDefault();
+            openCategory(category);
+          }, style: {
+            color: "#0645ad",
+            background: "#e8f0fe",
+            border: "1px solid #b3c7f0",
+            borderRadius: "3px",
+            padding: "2px 8px",
+            textDecoration: "none"
+          }, children: category }, category))
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(PageRenderer, { content: pages[currentPage], language: currentLanguage, pageName: currentPage, onOpenPage: openPage }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
           marginTop: "30px",
@@ -49737,12 +49829,10 @@ const callArticlesFunction = async (body, sessionToken) => {
   return callSupabaseFunction(ARTICLES_FUNCTION_URL, body, sessionToken);
 };
 // Returns { title: null } for every matching article; the page itself is loaded when it is opened.
-const ARTICLE_TAGS = ["entity", "group", "goi", "poi", "level", "phenomena", "class", "tale", "joke level", "sublevel"];
-const fetchPagesLocal = async (query, tags) => {
+const fetchPagesLocal = async (query) => {
   try {
     const q = typeof query === "string" ? query.trim() : "";
-    const t = Array.isArray(tags) ? tags : [];
-    const { status, data } = await callArticlesFunction(q ? { action: "search", query: q, tags: t } : { action: "list", tags: t });
+    const { status, data } = await callArticlesFunction(q ? { action: "search", query: q } : { action: "list" });
     if (status !== 200 || !Array.isArray(data.titles)) return {};
     return Object.fromEntries(data.titles.map((t) => [t, null]));
   } catch (e2) {
@@ -49750,6 +49840,22 @@ const fetchPagesLocal = async (query, tags) => {
     return {};
   }
 };
+// Every article's title with its filters and categories: { [title]: { filters, categories } }.
+// With a category, only the articles in it (the backend matches it ignoring case).
+const fetchArticleIndex = async (category) => {
+  try {
+    const { status, data } = await callArticlesFunction(category ? { action: "list", category } : { action: "list" });
+    if (status !== 200 || !Array.isArray(data.articles)) return null;
+    return Object.fromEntries(data.articles.map((a) => [a.title, {
+      filters: Array.isArray(a.filters) ? a.filters : [],
+      categories: Array.isArray(a.categories) ? a.categories : []
+    }]));
+  } catch (e2) {
+    console.error("Failed to load articles:", e2);
+    return null;
+  }
+};
+const sameTag = (a, b) => a.toLowerCase() === b.toLowerCase();
 // Shows an article in a sandboxed frame: its own scripts run, but they can't reach the site's
 // cookies, login or page, and can't navigate the site except through article links.
 const ARTICLE_FRAME_HELPER = `<script>(function () {
@@ -50569,7 +50675,7 @@ const ARTICLE_HELP = "Write HTML (CSS and JavaScript allowed). Images, GIFs, vid
 const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
   const [title, setTitle] = reactExports.useState(initial?.title || "");
   const [source, setSource] = reactExports.useState("");
-  const [tags, setTags] = reactExports.useState([]);
+  const [tagsText, setTagsText] = reactExports.useState("");
   const [loading, setLoading] = reactExports.useState(!!initial?.title);
   const [busy, setBusy] = reactExports.useState(false);
   const [status, setStatus] = reactExports.useState("");
@@ -50587,7 +50693,10 @@ const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
     request({ action: "source", title: originalTitle }).then((data) => {
       setTitle(data.title);
       setSource(data.source);
-      setTags(Array.isArray(data.tags) ? data.tags : []);
+      const lines = [];
+      if ((data.filters || []).length > 0) lines.push(`filters: ${data.filters.join(", ")}`);
+      if ((data.categories || []).length > 0) lines.push(`categorys: ${data.categories.join(", ")}`);
+      setTagsText(lines.join("\n"));
     }).catch((e2) => setStatus(e2.message)).finally(() => setLoading(false));
   }, [originalTitle]);
   const insertAtCursor = (text2) => {
@@ -50660,7 +50769,7 @@ const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
     setBusy(true);
     setStatus("Saving (downloading any linked media)...");
     try {
-      const data = await request({ action: "save", title: title.trim(), source, tags, originalTitle });
+      const data = await request({ action: "save", title: title.trim(), source, tags: tagsText, originalTitle });
       setSource(data.source);
       setStatus(`Saved "${data.title}".`);
       onSaved(data.title);
@@ -50676,22 +50785,8 @@ const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "10px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold" }, children: originalTitle ? `Editing "${originalTitle}"` : "New article" }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: title, onChange: (e2) => setTitle(e2.target.value), placeholder: "Title", maxLength: 200, style: MOD_INPUT_STYLE }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "13px", marginRight: "4px" }, children: "Tags:" }),
-      ARTICLE_TAGS.map((tag) => {
-        const on = tags.includes(tag);
-        return /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-pressed": on, disabled: busy, onClick: () => setTags((prev) => on ? prev.filter((t) => t !== tag) : [...prev, tag]), style: {
-          padding: "3px 9px",
-          fontFamily: "inherit",
-          fontSize: "12px",
-          border: `1px solid ${on ? "#b88d00" : "#999"}`,
-          borderRadius: "12px",
-          background: on ? "#e1ad01" : "#fff",
-          color: "#000",
-          cursor: "pointer"
-        }, children: tag }, tag);
-      })
-    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: "13px" }, children: "Tags (YAML or JSON): filters show up in the search Filter panel, categorys as links at the top of the page." }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { value: tagsText, onChange: (e2) => setTagsText(e2.target.value), spellCheck: false, "aria-label": "Tags", placeholder: "filters: Survival Difficulty 0, Survival Difficulty Habitable\ncategorys: Levels, Safe Levels", style: { ...MOD_INPUT_STYLE, minHeight: "60px", fontFamily: "'Courier New', Courier, monospace", fontSize: "13px", whiteSpace: "pre", resize: "vertical" } }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("image"), style: buttonStyle, children: "+ Image / GIF" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("video"), style: buttonStyle, children: "+ Video" }),
