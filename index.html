@@ -12460,6 +12460,10 @@ function requireClient() {
 }
 var clientExports = requireClient();
 var reactExports = requireReact();
+// Images from other people are shown only if they come from the site's own storage, and local previews
+// only if they are plain PNG, JPEG, GIF or WebP data, so a crafted address can't run code or track viewers.
+const SAFE_IMAGE_PREFIX = "https://jbqhrufyvhavbplzrdfp.supabase.co/storage/v1/object/public/";
+const safeImageSrc = (src) => typeof src === "string" && (src.startsWith(SAFE_IMAGE_PREFIX) || /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/.test(src)) ? src : void 0;
 const formatDate = (timestamp) => {
   const date = new Date(timestamp);
   const year = date.getFullYear();
@@ -12871,13 +12875,19 @@ const Backroomspedia = () => {
     verticalAlign: "middle"
   }, children: count > 99 ? "99+" : count });
   const [pageRatings, setPageRatings] = reactExports.useState({});
+  const [pageStats, setPageStats] = reactExports.useState({});
   const applyRating = (pageName, data) => {
     setPageRatings((prev) => ({ ...prev, [pageName]: data.rating }));
+    setPageStats((prev) => ({ ...prev, [pageName]: {
+      likes: Number(data.likes) || 0,
+      dislikes: Number(data.dislikes) || 0,
+      comments: Number(data.comments) || 0
+    } }));
     setUserVotes((prev) => ({ ...prev, [pageName]: data.myVote === 1 ? "like" : data.myVote === -1 ? "dislike" : null }));
   };
   const ratePage = async (pageName, direction) => {
     if (!isLoggedIn) {
-      alert("You must be logged in to rate pages.");
+      alert("You must be logged in to like or dislike pages.");
       return;
     }
     const current = userVotes[pageName] === "like" ? 1 : userVotes[pageName] === "dislike" ? -1 : 0;
@@ -12956,7 +12966,8 @@ const Backroomspedia = () => {
         setPages((prev) => ({ ...prev, [data.title]: data.html }));
         setArticleMeta((prev) => ({ ...prev, [data.title]: {
           filters: Array.isArray(data.filters) ? data.filters : [],
-          categories: Array.isArray(data.categories) ? data.categories : []
+          categories: Array.isArray(data.categories) ? data.categories : [],
+          views: Number(data.views) || 0
         } }));
         setCurrentPage((current) => current === requested && data.title !== requested ? data.title : current);
       } else if (status === 404) {
@@ -13544,7 +13555,7 @@ const Backroomspedia = () => {
             color: "#666",
             overflow: "hidden",
             cursor: "pointer"
-          }, children: (discussion.avatar || profileAvatars[discussion.user]) ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: (discussion.avatar || profileAvatars[discussion.user]), alt: "Avatar", style: {
+          }, children: (discussion.avatar || profileAvatars[discussion.user]) ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc((discussion.avatar || profileAvatars[discussion.user])), alt: "Avatar", style: {
             width: "100%",
             height: "100%",
             objectFit: "cover"
@@ -13750,7 +13761,7 @@ const Backroomspedia = () => {
             color: "#666",
             overflow: "hidden",
             cursor: "pointer"
-          }, children: comment.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: comment.avatar, alt: "Avatar", style: {
+          }, children: comment.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(comment.avatar), alt: "Avatar", style: {
             width: "100%",
             height: "100%",
             objectFit: "cover"
@@ -13878,7 +13889,7 @@ const Backroomspedia = () => {
           wordBreak: "break-word",
           whiteSpace: "pre-wrap"
         }, children: comment.text }),
-        comment.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: comment.image, alt: "Comment image", style: {
+        comment.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(comment.image), alt: "Comment image", style: {
           marginTop: "10px",
           maxWidth: "200px",
           maxHeight: "150px",
@@ -13961,7 +13972,7 @@ const Backroomspedia = () => {
           position: "relative",
           display: "inline-block"
         }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: replyImage, alt: "Upload preview", style: {
+          /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(replyImage), alt: "Upload preview", style: {
             maxWidth: "100px",
             maxHeight: "80px",
             border: "1px solid #ddd"
@@ -14482,7 +14493,7 @@ const Backroomspedia = () => {
                 fontSize: "14px",
                 color: "#666",
                 overflow: "hidden"
-              }, children: request.fromAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: request.fromAvatar, alt: "Avatar", style: {
+              }, children: request.fromAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(request.fromAvatar), alt: "Avatar", style: {
                 width: "100%",
                 height: "100%",
                 objectFit: "cover"
@@ -14592,7 +14603,7 @@ const Backroomspedia = () => {
           fontSize: "36px",
           color: "#666",
           overflow: "hidden"
-        }, children: viewingProfile.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: viewingProfile.avatar, alt: "Avatar", style: {
+        }, children: viewingProfile.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(viewingProfile.avatar), alt: "Avatar", style: {
           width: "100%",
           height: "100%",
           objectFit: "cover"
@@ -14779,7 +14790,7 @@ const Backroomspedia = () => {
           fontSize: "14px",
           color: "#333"
         }, children: comment.text }),
-        comment.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: comment.image, alt: "Comment image", style: {
+        comment.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(comment.image), alt: "Comment image", style: {
           marginTop: "8px",
           maxWidth: "150px",
           maxHeight: "100px",
@@ -15513,7 +15524,7 @@ const Backroomspedia = () => {
                 color: "#666",
                 overflow: "hidden",
                 cursor: "pointer"
-              }, children: user.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: user.avatar, alt: "Avatar", style: {
+              }, children: user.avatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(user.avatar), alt: "Avatar", style: {
                 width: "100%",
                 height: "100%",
                 objectFit: "cover"
@@ -15575,12 +15586,57 @@ const Backroomspedia = () => {
         position: "relative",
         color: "black"
       }, children: [
+        (() => {
+          const stats = pageStats[currentPage] || { likes: 0, dislikes: 0, comments: 0 };
+          const countTree = (items) => items.reduce((n, c2) => n + 1 + countTree(c2.replies || []), 0);
+          const commentCount = Array.isArray(pageComments[currentPage]) && pageComments[currentPage].length > 0 ? countTree(pageComments[currentPage]) : stats.comments;
+          const views = articleMeta[currentPage]?.views ?? 0;
+          const pageId = new URLSearchParams({ article: currentPage }).toString().slice("article=".length);
+          const vote = userVotes[currentPage];
+          const voteStyle = (color, active) => ({
+            color,
+            textDecoration: "underline",
+            background: "none",
+            border: "none",
+            padding: 0,
+            font: "inherit",
+            fontWeight: active ? "bold" : "normal",
+            cursor: "pointer"
+          });
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "page-stripe", style: {
+            height: "30px",
+            background: "#808080",
+            borderRadius: 0,
+            display: "flex",
+            alignItems: "center",
+            fontFamily: "sans-serif",
+            whiteSpace: "nowrap",
+            overflowX: "auto",
+            margin: "calc(-1 * clamp(14px, 4vw, 25px)) calc(-1 * clamp(14px, 4vw, 25px)) 14px"
+          }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+              flex: "0 0 100%",
+              minWidth: 0,
+              boxSizing: "border-box",
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "0 8px"
+            }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }, children: `name:${currentPage}, views:${views}, comments:${commentCount}` }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { display: "flex", gap: "16px", marginLeft: "16px", flexShrink: 0 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-label": `Like (${stats.likes})`, "aria-pressed": vote === "like", title: isLoggedIn ? "Like" : "Log in to like", onClick: () => ratePage(currentPage, 1), style: voteStyle("#00ff00", vote === "like"), children: `+${stats.likes}` }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-label": `Dislike (${stats.dislikes})`, "aria-pressed": vote === "dislike", title: isLoggedIn ? "Dislike" : "Log in to dislike", onClick: () => ratePage(currentPage, -1), style: voteStyle("#ff0000", vote === "dislike"), children: `-${stats.dislikes}` })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { padding: "0 8px" }, children: `date:00/00/00, id:${pageId}, citations:citations here` })
+          ] });
+        })(),
         isModerator && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => {
           setArticleEditTarget({ title: currentPage });
           setShowModerationPage(true);
         }, style: {
           position: "absolute",
-          top: "25px",
+          top: "44px",
           right: "25px",
           padding: "4px 12px",
           fontSize: "12px",
@@ -15611,67 +15667,6 @@ const Backroomspedia = () => {
           }, children: category }, category))
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(PageRenderer, { content: pages[currentPage], pageName: currentPage, onOpenPage: openPage }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          marginTop: "30px",
-          paddingTop: "20px",
-          borderTop: "1px solid #ddd"
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "14px",
-            padding: "4px 12px",
-            backgroundColor: "#ffffff",
-            border: "2px solid #a39c8e",
-            boxShadow: "none",
-            fontFamily: "'Courier New', Courier, monospace",
-            fontWeight: "bold",
-            fontSize: "18px",
-            color: "#1a1715",
-            userSelect: "none"
-          }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: {
-              fontFamily: "'Courier New', Courier, monospace",
-              fontSize: "18px",
-              fontWeight: "bold",
-              color: "#1a1715"
-            }, children: [
-              "Rating: ",
-              pageRatings[currentPage] || 0
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => ratePage(currentPage, 1), style: {
-              background: "none",
-              border: "none",
-              padding: "0",
-              margin: "0",
-              fontFamily: "'Courier New', Courier, monospace",
-              fontWeight: "bold",
-              fontSize: "18px",
-              color: userVotes[currentPage] === "like" ? "#4CAF50" : "#1a1715",
-              cursor: isLoggedIn ? "pointer" : "default",
-              lineHeight: "1"
-            }, children: "+" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => ratePage(currentPage, -1), style: {
-              background: "none",
-              border: "none",
-              padding: "0",
-              margin: "0",
-              fontFamily: "'Courier New', Courier, monospace",
-              fontWeight: "bold",
-              fontSize: "18px",
-              color: userVotes[currentPage] === "dislike" ? "#e74c3c" : "#1a1715",
-              cursor: isLoggedIn ? "pointer" : "default",
-              lineHeight: "1"
-            }, children: "–" })
-          ] }),
-          !isLoggedIn && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-            marginTop: "8px",
-            fontSize: "11px",
-            color: "#888",
-            fontStyle: "italic",
-            fontFamily: "monospace"
-          }, children: "Sign in to rate" })
-        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
           marginTop: "20px",
           paddingTop: "20px",
@@ -15730,7 +15725,7 @@ const Backroomspedia = () => {
                   fontSize: "16px",
                   color: "#666",
                   overflow: "hidden"
-                }, children: profileAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: profileAvatar, alt: "Avatar", style: {
+                }, children: profileAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(profileAvatar), alt: "Avatar", style: {
                   width: "100%",
                   height: "100%",
                   objectFit: "cover"
@@ -15756,7 +15751,7 @@ const Backroomspedia = () => {
                 position: "relative",
                 display: "inline-block"
               }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: commentImage, alt: "Upload preview", style: {
+                /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(commentImage), alt: "Upload preview", style: {
                   maxWidth: "150px",
                   maxHeight: "100px",
                   border: "1px solid #ddd"
@@ -15923,7 +15918,7 @@ const Backroomspedia = () => {
             overflow: "hidden",
             position: "relative"
           }, children: [
-            profileAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: profileAvatar, alt: "Avatar", style: {
+            profileAvatar ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(profileAvatar), alt: "Avatar", style: {
               width: "100%",
               height: "100%",
               objectFit: "cover"
@@ -16500,7 +16495,7 @@ const ModerationPage = ({ onClose, initialArticle, onArticlesChanged, onOpenArti
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `${entry.reports} report${entry.reports === 1 ? "" : "s"} · ${entry.kind === "comment" ? entry.post.isReply ? "Comment reply" : "Comment" : entry.post.isReply ? "Reply" : "Post"} by ${entry.post.user} on "${entry.post.pageName}" · ${formatModTime(entry.post.timestamp)}` }),
     entry.post.name && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold", marginBottom: "4px" }, children: entry.post.name }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { whiteSpace: "pre-wrap", marginBottom: "8px" }, children: entry.post.text }),
-    entry.post.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: entry.post.image, alt: "Reported image", style: { display: "block", maxWidth: "240px", maxHeight: "240px", marginBottom: "8px", border: "1px solid #ddd" } }),
+    entry.post.image && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: safeImageSrc(entry.post.image), alt: "Reported image", style: { display: "block", maxWidth: "240px", maxHeight: "240px", marginBottom: "8px", border: "1px solid #ddd" } }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: metaStyle, children: `Reasons: ${entry.reasons.join(" · ")}` }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { disabled: busy, onClick: () => removePost(entry), style: MOD_DANGER_BUTTON_STYLE, children: entry.kind === "comment" ? "Remove comment" : "Remove post" }),
@@ -16642,6 +16637,7 @@ const LEGAL_SECTIONS = [
       "Account: when you register we store your username and a hashed version of your password (PBKDF2-SHA-256 with a random salt). Your actual password is never stored. We do not ask for your email address or real name.",
       "Profile: your bio and profile picture are stored and shown to everyone, along with when you joined and how many posts, comments and ratings you have made.",
       "Discussions and comments: when you post in a discussion or comment on an article we store the page, the text, any title or image, the time and which account posted it. They are shown with your username to everyone and kept until you delete them, the post or comment they reply to is deleted, or your account is deleted.",
+      "Page views: when you open an article we add one to its view count, at most once per visitor per article per day. To tell visitors apart we store a one-way scrambled code made from your IP address together with a secret key, never the address itself. These codes are deleted within 24 hours, and only the total view count is kept and shown.",
       "Ratings and likes: we store which pages you rated and which comments you liked or disliked. Page ratings are shown as a total score; the usernames that liked or disliked a comment can be seen by others. You can undo a rating or like at any time.",
       "Images: pictures are stored in Supabase Storage and can be opened by anyone with the link. When you change or remove your picture, delete a comment with an image, or delete your account, the image file is deleted within 2 hours.",
       "Reports and moderation: when you report a post or comment we store what you reported, your account and your reason. Moderators see the post and the reasons but not who reported it. Reports are kept until the post or your account is deleted. If your account is banned we store the reason, who banned it and when the ban ends. Moderators can also clear a profile's bio and picture. Moderators' actions (removing posts or comments, dismissing reports, bans, clearing profiles) are logged with the moderator's username, the affected username and page, and the reason, and the log is kept for 180 days.",
