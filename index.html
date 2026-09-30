@@ -13,6 +13,9 @@ padding: 0;
 -moz-user-select: none;
 user-select: none;
 }
+.site-nav button:hover { text-decoration: underline; }
+.info-menu button, .info-menu a { display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none; font: inherit; color: #000; text-decoration: none; cursor: pointer; box-sizing: border-box; }
+.info-menu button:hover, .info-menu a:hover { background: #f0f0f0; }
 </style><script type="module">
 var commonjsGlobal = typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : {};
 function getDefaultExportFromCjs(x2) {
@@ -45884,6 +45887,9 @@ const Backroomspedia = () => {
   const [profileBio, setProfileBio] = reactExports.useState("");
   const [profileAvatar, setProfileAvatar] = reactExports.useState(null);
   const [searchView, setSearchView] = reactExports.useState("pages");
+  const [selectedTags, setSelectedTags] = reactExports.useState([]);
+  const [showFilters, setShowFilters] = reactExports.useState(false);
+  const [infoMenuLeft, setInfoMenuLeft] = reactExports.useState(null);
   const [apiUsers, setApiUsers] = reactExports.useState([]);
   const [isModerator, setIsModerator] = reactExports.useState(false);
   const [openReportCount, setOpenReportCount] = reactExports.useState(0);
@@ -46165,21 +46171,33 @@ const Backroomspedia = () => {
       if (articleLoadingRef.current === requested) articleLoadingRef.current = null;
     });
   }, [currentPage, pages]);
-  const handleKeyDown = async (e2) => {
-    if (e2.key === "Enter") {
-      const text2 = searchValue.toLowerCase().trim();
-      const fetched = text2 === "" ? {} : await fetchPagesLocal(searchValue.trim());
-      if (Object.keys(fetched).length > 0) {
-        setPages((prev) => ({ ...fetched, ...prev }));
-      }
-      const matchingPages = text2 === "" ? [] : [...new Set([...Object.keys(fetched), ...Object.keys(pages).filter((name) => name.toLowerCase().includes(text2))])];
-      setResults(matchingPages);
-      setLastResults(matchingPages);
-      setResultPage(1);
-      setPageWindowStart(1);
-      setHasSearched(true);
-      setCurrentPage(null);
+  // Searches article titles, narrowed to the selected filter tags. With listAll, lists every article
+  // (still narrowed by the tags), which is what the Library link shows.
+  const runSearch = async (listAll = false) => {
+    const text2 = listAll ? "" : searchValue.toLowerCase().trim();
+    const tags = selectedTags;
+    if (listAll) setSearchValue("");
+    const fetched = text2 === "" && tags.length === 0 && !listAll ? {} : await fetchPagesLocal(text2, tags);
+    if (Object.keys(fetched).length > 0) {
+      setPages((prev) => ({ ...fetched, ...prev }));
     }
+    // Pages already loaded can only be matched by title here, so skip them when filtering by tag.
+    const localMatches = text2 === "" || tags.length > 0 ? [] : Object.keys(pages).filter((name) => name.toLowerCase().includes(text2));
+    const matchingPages = [...new Set([...Object.keys(fetched), ...localMatches])];
+    setResults(matchingPages);
+    setLastResults(matchingPages);
+    setResultPage(1);
+    setPageWindowStart(1);
+    setHasSearched(text2 !== "" || tags.length > 0 || listAll);
+    setCurrentPage(null);
+    setSearchView("pages");
+    setActiveMenu(null);
+    setShowProfilePage(false);
+    setShowDiscussionPage(false);
+    setShowPrintView(false);
+  };
+  const handleKeyDown = (e2) => {
+    if (e2.key === "Enter") runSearch();
   };
   const totalResultPages = Math.ceil(results.length / 10);
   const visibleResultPages = Array.from({ length: 5 }, (_2, index2) => pageWindowStart + index2);
@@ -47285,6 +47303,7 @@ const Backroomspedia = () => {
     ] }, comment.id);
   };
   const [showLegalPage, setShowLegalPage] = reactExports.useState(false);
+  const [showLicensingPage, setShowLicensingPage] = reactExports.useState(false);
   const [showModerationPage, setShowModerationPage] = reactExports.useState(false);
   const openModerationPage = () => {
     setIsSidebarOpen(false);
@@ -47297,9 +47316,17 @@ const Backroomspedia = () => {
   };
   const openLegalPage = () => {
     setIsSidebarOpen(false);
+    setInfoMenuLeft(null);
+    setShowLicensingPage(false);
     setShowLegalPage(true);
   };
-  const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showLegalPage ? "legal" : showModerationPage ? "moderation" : showDiscussionPage ? "discussion" : null;
+  const openLicensingPage = () => {
+    setIsSidebarOpen(false);
+    setInfoMenuLeft(null);
+    setShowLegalPage(false);
+    setShowLicensingPage(true);
+  };
+  const urlPage = showLoginPage ? "login" : showProfilePage ? "profile" : showLegalPage ? "legal" : showLicensingPage ? "licensing" : showModerationPage ? "moderation" : showDiscussionPage ? "discussion" : null;
   const urlPanel = isSidebarOpen && sidebarView === "settings" ? "settings" : null;
   const urlArticle = currentPage || null;
   const urlSyncReadyRef = reactExports.useRef(false);
@@ -47309,11 +47336,12 @@ const Backroomspedia = () => {
       const params = new URLSearchParams(window.location.search);
       const page = params.get("page");
       const panel = params.get("panel");
-      setUrlNotFound(page !== null && !["discussion", "login", "profile", "legal", "moderation"].includes(page) || panel !== null && panel !== "settings");
+      setUrlNotFound(page !== null && !["discussion", "login", "profile", "legal", "licensing", "moderation"].includes(page) || panel !== null && panel !== "settings");
       setShowDiscussionPage(page === "discussion");
       setShowLoginPage(page === "login");
       setShowProfilePage(page === "profile");
       setShowLegalPage(page === "legal");
+      setShowLicensingPage(page === "licensing");
       setShowModerationPage(page === "moderation");
       setCurrentPage(params.get("article") || null);
       if (panel === "settings") {
@@ -47335,7 +47363,7 @@ const Backroomspedia = () => {
     }
     const url = new URL(window.location.href);
     const currentUrlPage = url.searchParams.get("page");
-    const knownUrlPage = ["discussion", "login", "profile", "legal", "moderation"].includes(currentUrlPage) ? currentUrlPage : null;
+    const knownUrlPage = ["discussion", "login", "profile", "legal", "licensing", "moderation"].includes(currentUrlPage) ? currentUrlPage : null;
     const knownUrlPanel = url.searchParams.get("panel") === "settings" ? "settings" : null;
     if (knownUrlPage === urlPage && knownUrlPanel === urlPanel && (url.searchParams.get("article") || null) === urlArticle) return;
     if (urlPage) url.searchParams.set("page", urlPage);
@@ -47355,6 +47383,109 @@ const Backroomspedia = () => {
     url.searchParams.delete("panel");
     window.history.replaceState(null, "", url);
   }, [currentPage, urlNotFound]);
+  const navButtonStyle = {
+    background: "none",
+    border: "none",
+    padding: 0,
+    font: "inherit",
+    color: "#000",
+    cursor: "pointer"
+  };
+  const siteHeader = /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "site-stripe", style: {
+      height: "50px",
+      flexShrink: 0,
+      background: "#e89d7d",
+      display: "flex",
+      alignItems: "center",
+      padding: "0 16px",
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "22px",
+      color: "#000",
+      gap: "12px"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-label": "Menu", onClick: () => setIsSidebarOpen(true), style: {
+        background: "none",
+        border: "none",
+        padding: 0,
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: "28px",
+        lineHeight: 1,
+        color: "red",
+        cursor: "pointer"
+      }, children: "≡" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { onClick: homePage, style: { cursor: "pointer" }, children: [
+        "Backroomspedia",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#00c000" }, children: ":" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("nav", { className: "site-nav", onScroll: () => setInfoMenuLeft(null), style: {
+      height: "30px",
+      flexShrink: 0,
+      background: "#d98a69",
+      display: "flex",
+      alignItems: "center",
+      gap: "20px",
+      padding: "0 16px",
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "15px",
+      overflowX: "auto",
+      whiteSpace: "nowrap"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: () => runSearch(true), style: navButtonStyle, children: "Library" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: openLegalPage, style: navButtonStyle, children: "Legal" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-haspopup": "true", "aria-expanded": infoMenuLeft !== null, onClick: (e2) => {
+        const left = e2.currentTarget.offsetLeft - e2.currentTarget.parentElement.scrollLeft;
+        setInfoMenuLeft((current) => current === null ? left : null);
+      }, style: navButtonStyle, children: "Info pages" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: homePage, style: navButtonStyle, children: "Wiki" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: openLicensingPage, style: navButtonStyle, children: "Licensing" })
+    ] }),
+    infoMenuLeft !== null && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => setInfoMenuLeft(null), style: { position: "fixed", inset: 0, zIndex: 1900 } }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { role: "menu", className: "info-menu", style: {
+        position: "absolute",
+        top: "80px",
+        left: `${Math.max(0, infoMenuLeft)}px`,
+        background: "white",
+        border: "1px solid #999",
+        boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+        zIndex: 2e3,
+        minWidth: "160px",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        fontSize: "14px"
+      }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", role: "menuitem", onClick: openLegalPage, children: "Legal" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", role: "menuitem", onClick: openLicensingPage, children: "Licensing" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", role: "menuitem", onClick: () => {
+          setInfoMenuLeft(null);
+          setShowDiscussionPage(true);
+        }, children: "Discussions" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("a", { role: "menuitem", href: "mailto:backroomspedia@protonmail.com", onClick: () => setInfoMenuLeft(null), children: "Contact" })
+      ] })
+    ] })
+  ] });
+  const footerLinkStyle = { color: "blue", textDecoration: "underline", cursor: "pointer" };
+  const siteFooter = /* @__PURE__ */ jsxRuntimeExports.jsxs("footer", { style: {
+    marginTop: "auto",
+    background: "#ccc",
+    padding: "14px 16px",
+    fontFamily: "Arial, Helvetica, sans-serif",
+    fontSize: "14px",
+    color: "#000",
+    textAlign: "center"
+  }, children: [
+    "© Backroomspedia, All rights reserved • ",
+    /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "?page=legal", onClick: (e2) => {
+      e2.preventDefault();
+      openLegalPage();
+    }, style: footerLinkStyle, children: "Legal" }),
+    " • ",
+    /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "?page=licensing", onClick: (e2) => {
+      e2.preventDefault();
+      openLicensingPage();
+    }, style: footerLinkStyle, children: "Licensing" })
+  ] });
   const sharedOverlays = /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: closeSidebar, style: {
       position: "fixed",
@@ -47899,7 +48030,8 @@ const Backroomspedia = () => {
           ] })
         ] })
       ] }) }),
-    showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose: () => setShowLegalPage(false) }),
+    showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose: () => setShowLegalPage(false), onOpenLicensing: openLicensingPage }),
+    showLicensingPage && /* @__PURE__ */ jsxRuntimeExports.jsx(LicensingPage, { onClose: () => setShowLicensingPage(false), onOpenLegal: openLegalPage }),
     showModerationPage && /* @__PURE__ */ jsxRuntimeExports.jsx(ModerationPage, { initialArticle: articleEditTarget, onArticlesChanged: (savedTitle) => {
       refreshArticleList();
       if (savedTitle) setPages((prev) => ({ ...prev, [savedTitle]: null }));
@@ -47913,7 +48045,7 @@ const Backroomspedia = () => {
       setArticleEditTarget(null);
       refreshModeratorStatus();
     } }),
-    !cookieNoticeDismissed && !showLegalPage && /* @__PURE__ */ jsxRuntimeExports.jsx(CookieNotice, { onAccept: dismissCookieNotice, onLearnMore: openLegalPage }),
+    !cookieNoticeDismissed && !showLegalPage && !showLicensingPage && /* @__PURE__ */ jsxRuntimeExports.jsx(CookieNotice, { onAccept: dismissCookieNotice, onLearnMore: openLegalPage }),
     showCommentHistory && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
       position: "fixed",
       inset: 0,
@@ -48127,63 +48259,17 @@ const Backroomspedia = () => {
     return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { key: "discussion-page", style: {
       margin: 0,
       fontFamily: "Arial, Helvetica, sans-serif",
-      background: "#FFF1CF",
+      background: "white",
       color: "black",
-      minHeight: "100vh"
+      minHeight: "100vh",
+      display: "flex",
+      flexDirection: "column"
     }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { style: {
-        background: "#C6B49F",
-        width: "100%",
-        padding: "18px 0",
-        textAlign: "center",
-        position: "relative"
-      }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: () => setIsSidebarOpen(true), role: "button", tabIndex: 0, "aria-label": "Open menu", onKeyDown: (event) => {
-          if (event.key === "Enter" || event.key === " ") setIsSidebarOpen(true);
-        }, style: {
-          position: "absolute",
-          left: "20px",
-          top: "50%",
-          transform: "translateY(-50%)",
-          cursor: "pointer",
-          zIndex: 10
-        }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-            width: "28px",
-            height: "3px",
-            background: "black",
-            margin: "5px 0",
-            borderRadius: "1px"
-          } }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-            width: "28px",
-            height: "3px",
-            background: "black",
-            margin: "5px 0",
-            borderRadius: "1px"
-          } }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-            width: "28px",
-            height: "3px",
-            background: "black",
-            margin: "5px 0",
-            borderRadius: "1px"
-          } })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { onClick: homePage, style: {
-          margin: 0,
-          fontSize: "38px",
-          fontWeight: "400",
-          cursor: "pointer",
-          color: "black",
-          fontFamily: "'EB Garamond', serif",
-          letterSpacing: "2px"
-        }, children: "Backroomspedia" })
-      ] }),
+      siteHeader,
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
         width: "100%",
         maxWidth: "900px",
-        margin: "auto",
+        margin: "0 auto",
         padding: "30px",
         boxSizing: "border-box",
         paddingBottom: "100px"
@@ -48283,6 +48369,7 @@ const Backroomspedia = () => {
           marginTop: "20px"
         }, children: currentPage ? "No discussions yet. Start one to suggest improvements!" : "No discussions yet. Start a conversation about the Backrooms!" })
       ] }) }),
+      siteFooter,
       sharedOverlays
     ] });
   }
@@ -48557,99 +48644,79 @@ const Backroomspedia = () => {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
     margin: 0,
     fontFamily: "Arial, Helvetica, sans-serif",
-    background: "#FFF1CF",
+    background: "white",
     color: "black",
-    minHeight: "100vh"
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column"
   }, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { style: {
-      background: "#C6B49F",
-      width: "100%",
-      padding: "18px 0",
-      textAlign: "center",
-      position: "relative"
-    }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        position: "absolute",
-        left: "20px",
-        top: "50%",
-        transform: "translateY(-50%)",
-        cursor: "pointer",
-        zIndex: 10
-      }, onClick: () => setIsSidebarOpen(true), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          width: "28px",
-          height: "3px",
-          background: "black",
-          margin: "5px 0",
-          borderRadius: "1px"
-        } }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          width: "28px",
-          height: "3px",
-          background: "black",
-          margin: "5px 0",
-          borderRadius: "1px"
-        } }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-          width: "28px",
-          height: "3px",
-          background: "black",
-          margin: "5px 0",
-          borderRadius: "1px"
-        } })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { onClick: homePage, style: {
-        margin: 0,
-        fontSize: "38px",
-        fontWeight: "400",
-        cursor: "pointer",
-        color: "black",
-        fontFamily: "'EB Garamond', serif",
-        letterSpacing: "2px"
-      }, children: "Backroomspedia" })
-    ] }),
+    siteHeader,
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
       width: "100%",
       maxWidth: "900px",
-      margin: "auto",
+      margin: "0 auto",
       padding: "30px",
       boxSizing: "border-box"
     }, children: [
       !currentPage && !showProfilePage && activeMenu === null && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        position: "relative"
+        fontFamily: "Arial, Helvetica, sans-serif",
+        marginBottom: "16px"
       }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { style: {
-          width: "100%",
-          padding: "14px",
-          fontSize: "18px",
-          border: "2px solid #F3EFE5",
-          outline: "none",
-          boxSizing: "border-box",
-          background: "white",
-          fontFamily: "Arial, Helvetica, sans-serif"
-        }, type: "text", placeholder: "Search", value: searchValue, onChange: (e2) => {
-          setSearchValue(e2.target.value);
-          setHasSearched(false);
-        }, onKeyDown: handleKeyDown }),
-        searchValue.trim() !== "" && hasSearched && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-          display: "flex",
-          gap: "15px",
-          marginTop: "10px",
-          fontFamily: "'EB Garamond', serif",
-          fontSize: "16px"
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          position: "relative",
+          maxWidth: "800px"
         }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { onClick: () => setSearchView("pages"), style: {
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { role: "search", onSubmit: (e2) => {
+          e2.preventDefault();
+          runSearch();
+        }, style: { display: "flex" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "search", placeholder: "Search Backroomspedia", "aria-label": "Search", value: searchValue, onChange: (e2) => {
+            setSearchValue(e2.target.value);
+            setHasSearched(false);
+          }, style: {
+            flex: 1,
+            minWidth: 0,
+            height: "36px",
+            padding: "0 10px",
+            fontSize: "15px",
+            fontFamily: "inherit",
+            border: "1px solid #999",
+            borderRight: "none",
+            borderRadius: 0,
+            outline: "none",
+            background: "white",
+            color: "black",
+            boxSizing: "border-box"
+          } }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", "aria-label": "Search", style: {
+            width: "44px",
+            height: "36px",
+            border: "1px solid #999",
+            background: "#e1ad01",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             cursor: "pointer",
-            color: searchView === "pages" ? "black" : "#999",
-            fontWeight: searchView === "pages" ? "bold" : "normal",
-            textDecoration: searchView === "pages" ? "underline" : "none"
-          }, children: "Pages" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { onClick: () => setSearchView("users"), style: {
+            boxSizing: "border-box",
+            padding: 0,
+            flexShrink: 0
+          }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "#000", strokeWidth: "2.5", strokeLinecap: "round", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: "10", cy: "10", r: "7" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("line", { x1: "15.5", y1: "15.5", x2: "21", y2: "21" })
+          ] }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-expanded": showFilters, "aria-controls": "filters", onClick: () => setShowFilters((v) => !v), style: {
+            height: "36px",
+            marginLeft: "8px",
+            padding: "0 12px",
+            border: "1px solid #999",
+            background: showFilters ? "#eee" : "#fff",
+            fontFamily: "inherit",
+            fontSize: "14px",
+            color: "#000",
             cursor: "pointer",
-            color: searchView === "users" ? "black" : "#999",
-            fontWeight: searchView === "users" ? "bold" : "normal",
-            textDecoration: searchView === "users" ? "underline" : "none"
-          }, children: "Users" })
+            boxSizing: "border-box",
+            flexShrink: 0
+          }, children: selectedTags.length > 0 ? `Filter (${selectedTags.length})` : "Filter" })
         ] }),
         searchValue.trim() !== "" && !currentPage && !hasSearched && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
           position: "absolute",
@@ -48682,6 +48749,68 @@ const Backroomspedia = () => {
             fontFamily: "monospace"
           }, children: "No results" })
         ] })
+        ] }),
+        showFilters && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { id: "filters", style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "6px",
+          maxWidth: "800px",
+          marginTop: "8px",
+          padding: "8px",
+          border: "1px solid #999",
+          boxSizing: "border-box"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "13px", alignSelf: "center", marginRight: "4px" }, children: "Available:" }),
+          ARTICLE_TAGS.map((tag) => {
+            const on = selectedTags.includes(tag);
+            return /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-pressed": on, onClick: () => setSelectedTags((prev) => on ? prev.filter((t) => t !== tag) : [...prev, tag]), style: {
+              padding: "4px 10px",
+              fontFamily: "inherit",
+              fontSize: "13px",
+              border: `1px solid ${on ? "#b88d00" : "#999"}`,
+              borderRadius: "12px",
+              background: on ? "#e1ad01" : "#fff",
+              color: "#000",
+              cursor: "pointer"
+            }, children: tag }, tag);
+          })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { role: "tablist", style: {
+          display: "flex",
+          gap: "20px",
+          marginTop: "16px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", role: "tab", "aria-selected": searchView === "pages", onClick: () => setSearchView("pages"), style: {
+            background: "none",
+            border: "none",
+            padding: 0,
+            fontFamily: "inherit",
+            fontSize: "15px",
+            color: searchView === "pages" ? "#000" : "#888",
+            textDecoration: searchView === "pages" ? "underline" : "none",
+            cursor: "pointer"
+          }, children: "Pages" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", role: "tab", "aria-selected": searchView === "users", onClick: () => setSearchView("users"), style: {
+            background: "none",
+            border: "none",
+            padding: 0,
+            fontFamily: "inherit",
+            fontSize: "15px",
+            color: searchView === "users" ? "#000" : "#888",
+            textDecoration: searchView === "users" ? "underline" : "none",
+            cursor: "pointer"
+          }, children: "Users" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", role: "tab", "aria-selected": searchView === "discussions", onClick: () => setShowDiscussionPage(true), style: {
+            background: "none",
+            border: "none",
+            padding: 0,
+            fontFamily: "inherit",
+            fontSize: "15px",
+            color: searchView === "discussions" ? "#000" : "#888",
+            textDecoration: searchView === "discussions" ? "underline" : "none",
+            cursor: "pointer"
+          }, children: "Discussions" })
+        ] })
       ] }),
       !currentPage && !showProfilePage && activeMenu === null && urlNotFound && searchValue.trim() === "" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
         fontSize: "20px",
@@ -48705,9 +48834,9 @@ const Backroomspedia = () => {
             onGoToPage: goToResultPage
           }
         )
-      ] }) : searchValue.trim() !== "" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "No Results!" }) : null : (
+      ] }) : hasSearched ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "No Results!" }) : null : (
         // Users view
-        searchValue.trim() !== "" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+        searchValue.trim() === "" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontFamily: "Arial, Helvetica, sans-serif", fontSize: "16px", color: "#666" }, children: "Type a username and press search." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
           marginTop: "20px"
         }, children: (() => {
           const matchingUsers = apiUsers.filter(
@@ -49307,19 +49436,11 @@ const Backroomspedia = () => {
           ] })
         ] })
       ] }),
-      activeMenu === null && !aiOverlayOpen && !showProfilePage && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
-        marginTop: "600px",
-        textAlign: "center",
-        color: "#555",
-        fontSize: "14px"
-      }, children: [
-        "© Backroomspedia, 2026 All rights reserved · ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { onClick: openLegalPage, style: { cursor: "pointer", textDecoration: "underline" }, children: "Legal" })
-      ] })
     ] }),
+    activeMenu === null && !aiOverlayOpen && siteFooter,
     !currentPage && !showProfilePage && activeMenu === null && !aiOverlayOpen && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
       position: "fixed",
-      bottom: "25px",
+      bottom: "70px",
       left: "25px",
       display: "flex",
       gap: "10px",
@@ -49616,10 +49737,12 @@ const callArticlesFunction = async (body, sessionToken) => {
   return callSupabaseFunction(ARTICLES_FUNCTION_URL, body, sessionToken);
 };
 // Returns { title: null } for every matching article; the page itself is loaded when it is opened.
-const fetchPagesLocal = async (query) => {
+const ARTICLE_TAGS = ["entity", "group", "goi", "poi", "level", "phenomena", "class", "tale", "joke level", "sublevel"];
+const fetchPagesLocal = async (query, tags) => {
   try {
     const q = typeof query === "string" ? query.trim() : "";
-    const { status, data } = await callArticlesFunction(q ? { action: "search", query: q } : { action: "list" });
+    const t = Array.isArray(tags) ? tags : [];
+    const { status, data } = await callArticlesFunction(q ? { action: "search", query: q, tags: t } : { action: "list", tags: t });
     if (status !== 200 || !Array.isArray(data.titles)) return {};
     return Object.fromEntries(data.titles.map((t) => [t, null]));
   } catch (e2) {
@@ -50446,6 +50569,7 @@ const ARTICLE_HELP = "Write HTML (CSS and JavaScript allowed). Images, GIFs, vid
 const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
   const [title, setTitle] = reactExports.useState(initial?.title || "");
   const [source, setSource] = reactExports.useState("");
+  const [tags, setTags] = reactExports.useState([]);
   const [loading, setLoading] = reactExports.useState(!!initial?.title);
   const [busy, setBusy] = reactExports.useState(false);
   const [status, setStatus] = reactExports.useState("");
@@ -50463,6 +50587,7 @@ const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
     request({ action: "source", title: originalTitle }).then((data) => {
       setTitle(data.title);
       setSource(data.source);
+      setTags(Array.isArray(data.tags) ? data.tags : []);
     }).catch((e2) => setStatus(e2.message)).finally(() => setLoading(false));
   }, [originalTitle]);
   const insertAtCursor = (text2) => {
@@ -50535,7 +50660,7 @@ const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
     setBusy(true);
     setStatus("Saving (downloading any linked media)...");
     try {
-      const data = await request({ action: "save", title: title.trim(), source, originalTitle });
+      const data = await request({ action: "save", title: title.trim(), source, tags, originalTitle });
       setSource(data.source);
       setStatus(`Saved "${data.title}".`);
       onSaved(data.title);
@@ -50551,6 +50676,22 @@ const ArticleEditor = ({ initial, onSaved, onOpen, onCancel }) => {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "10px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: "14px" }, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: "bold" }, children: originalTitle ? `Editing "${originalTitle}"` : "New article" }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: title, onChange: (e2) => setTitle(e2.target.value), placeholder: "Title", maxLength: 200, style: MOD_INPUT_STYLE }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "13px", marginRight: "4px" }, children: "Tags:" }),
+      ARTICLE_TAGS.map((tag) => {
+        const on = tags.includes(tag);
+        return /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", "aria-pressed": on, disabled: busy, onClick: () => setTags((prev) => on ? prev.filter((t) => t !== tag) : [...prev, tag]), style: {
+          padding: "3px 9px",
+          fontFamily: "inherit",
+          fontSize: "12px",
+          border: `1px solid ${on ? "#b88d00" : "#999"}`,
+          borderRadius: "12px",
+          background: on ? "#e1ad01" : "#fff",
+          color: "#000",
+          cursor: "pointer"
+        }, children: tag }, tag);
+      })
+    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("image"), style: buttonStyle, children: "+ Image / GIF" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", disabled: busy, onClick: () => insertMedia("video"), style: buttonStyle, children: "+ Video" }),
@@ -50815,6 +50956,7 @@ const LEGAL_SECTIONS = [
       "Backroomspedia is a free, fan-made encyclopedia about the Backrooms. By using the site you agree to these terms.",
       "Discussion posts, comments, images you attach, page ratings, your bio and your profile picture are public and shown with your username. You are responsible for what you post.",
       "Articles are written by moderators. They can contain interactive content (JavaScript), which runs in an isolated frame that cannot see your account, cookies or login.",
+      "Many articles are adapted from the Backrooms Wiki on Wikidot and the Backrooms Fandom wiki. That material, and our changes to it, is shared under the Creative Commons Attribution-ShareAlike 3.0 license, not under \"All rights reserved\". See the Licensing page for sources and how to reuse it.",
       "Only upload images you have the right to share. Profile pictures and comment images must be PNG, JPEG, GIF or WebP files of 2 MB or less.",
       "Do not post content that is illegal, hateful, harassing, sexually explicit or that infringes someone else's rights. Moderators may remove content that breaks these rules and may ban the account that posted it from posting, for a set time or permanently.",
       "Do not try to break, overload or get around the security of the site, including its login and rate limits.",
@@ -50853,16 +50995,17 @@ const LEGAL_SECTIONS = [
     items: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
         "Questions about these terms or your data can be sent to ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "mailto:backroomspedia@protonmail.com", style: { color: "black" }, children: "backroomspedia@protonmail.com" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "mailto:backroomspedia@protonmail.com", style: { color: "blue" }, children: "backroomspedia@protonmail.com" })
       ] })
     ]
   }
 ];
-const LegalPage = ({ onClose }) => {
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+const LegalPage = ({ onClose, title = "Legal", updated = "Last updated: 30 September 2026", sections = LEGAL_SECTIONS, onOpenLicensing, onOpenLegal }) => {
+  const otherLink = onOpenLicensing ? { label: "Licensing", open: onOpenLicensing } : onOpenLegal ? { label: "Legal", open: onOpenLegal } : null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { role: "dialog", "aria-label": title, style: {
     position: "fixed",
     inset: 0,
-    background: "#FFF1CF",
+    background: "#f2f2f2",
     zIndex: 4e3,
     overflowY: "auto",
     padding: "20px",
@@ -50888,7 +51031,7 @@ const LegalPage = ({ onClose }) => {
         fontWeight: "normal",
         color: "black",
         fontFamily: "'EB Garamond', serif"
-      }, children: "Legal" }),
+      }, children: title }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, style: {
         background: "none",
         border: "1px solid #BDBDBD",
@@ -50904,8 +51047,8 @@ const LegalPage = ({ onClose }) => {
       fontSize: "12px",
       color: "#666",
       margin: "0 0 20px 0"
-    }, children: "Last updated: 29 September 2026" }),
-    LEGAL_SECTIONS.map((section) => /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { style: { marginBottom: "24px" }, children: [
+    }, children: updated }),
+    sections.map((section) => /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { style: { marginBottom: "24px" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: {
         fontFamily: "'EB Garamond', serif",
         fontSize: "18px",
@@ -50923,9 +51066,80 @@ const LegalPage = ({ onClose }) => {
         lineHeight: 1.6,
         color: "#333"
       }, children: section.items.map((item, i2) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { style: { marginBottom: "6px" }, children: item }, i2)) })
-    ] }, section.title))
+    ] }, section.title)),
+    otherLink && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: {
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "14px",
+      color: "#333",
+      margin: 0
+    }, children: [
+      "See also: ",
+      /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: `?page=${otherLink.label.toLowerCase()}`, onClick: (e2) => {
+        e2.preventDefault();
+        otherLink.open();
+      }, style: { color: "blue" }, children: otherLink.label })
+    ] })
   ] }) });
 };
+const licenseLink = (href, text2) => /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href, target: "_blank", rel: "noopener noreferrer", style: { color: "blue" }, children: text2 || href });
+const CC_BY_SA_3 = "https://creativecommons.org/licenses/by-sa/3.0/";
+const LICENSING_SECTIONS = [
+  {
+    title: "Where our content comes from",
+    items: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("b", { children: "The Backrooms Wiki (Wikidot)" }),
+        " — ",
+        licenseLink("https://backrooms-wiki.wikidot.com/"),
+        ". Levels, entities, groups, objects and tales adapted from here are licensed under ",
+        licenseLink(CC_BY_SA_3, "CC BY-SA 3.0"),
+        ", as stated on that site, unless a page says otherwise."
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("b", { children: "The Backrooms Fandom wiki" }),
+        " — ",
+        licenseLink("https://backrooms.fandom.com/"),
+        ". Community content adapted from here is licensed under ",
+        licenseLink(CC_BY_SA_3, "CC BY-SA 3.0"),
+        ", as stated on that site, unless otherwise noted."
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("b", { children: "The Internet Archive" }),
+        " — ",
+        licenseLink("https://archive.org"),
+        ". Used for archived copies of pages, images and videos that are no longer online. Each archived item keeps the license chosen by its original author; the Internet Archive does not change it."
+      ] })
+    ]
+  },
+  {
+    title: "Reusing articles",
+    items: [
+      "Articles adapted from the sources above, including our changes to them, are shared under CC BY-SA 3.0. You may copy, change and share them, including commercially, as long as you:",
+      "credit the original authors and link to the original page (each source wiki lists a page's authors in its history),",
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: ["link to the license (", licenseLink(CC_BY_SA_3), ") and say if you made changes, and"] }),
+      "share anything you make from them under the same license."
+    ]
+  },
+  {
+    title: "Everything else",
+    items: [
+      "\"All rights reserved\" in the footer covers Backroomspedia's own design, code and logo only. It does not override the licenses of adapted articles or archived material.",
+      "Discussion posts, comments, profile pictures and bios belong to the users who posted them.",
+      "Backroomspedia is an independent fan project. It is not affiliated with or endorsed by Wikidot, Fandom or the Internet Archive, or by the authors of the original works."
+    ]
+  },
+  {
+    title: "Missing credit or a problem?",
+    items: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        "If you wrote something that appears here without proper credit, or want it removed, email ",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "mailto:backroomspedia@protonmail.com", style: { color: "blue" }, children: "backroomspedia@protonmail.com" }),
+        " with a link to the article and to your original work."
+      ] })
+    ]
+  }
+];
+const LicensingPage = ({ onClose, onOpenLegal }) => /* @__PURE__ */ jsxRuntimeExports.jsx(LegalPage, { onClose, onOpenLegal, title: "Licensing", updated: "Last updated: 30 September 2026", sections: LICENSING_SECTIONS });
 const CookieNotice = ({ onAccept, onLearnMore }) => {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { role: "region", "aria-label": "Cookie notice", style: {
     position: "fixed",
