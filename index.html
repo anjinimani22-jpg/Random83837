@@ -49028,7 +49028,7 @@ const Backroomspedia = () => {
           display: "flex",
           flexWrap: "wrap",
           alignItems: "center",
-          gap: "6px",
+          gap: "4px 12px",
           marginBottom: "14px",
           paddingRight: isModerator ? "60px" : 0,
           fontFamily: "Arial, Helvetica, sans-serif",
@@ -49039,12 +49039,8 @@ const Backroomspedia = () => {
             e2.preventDefault();
             openCategory(category);
           }, style: {
-            color: "#0645ad",
-            background: "#e8f0fe",
-            border: "1px solid #b3c7f0",
-            borderRadius: "3px",
-            padding: "2px 8px",
-            textDecoration: "none"
+            color: "blue",
+            textDecoration: "underline"
           }, children: category }, category))
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(PageRenderer, { content: pages[currentPage], language: currentLanguage, pageName: currentPage, onOpenPage: openPage }),
